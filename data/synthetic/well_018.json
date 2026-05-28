@@ -1,0 +1,121 @@
+{
+  "well_id": "ED-018H",
+  "api_number": "42-109-10018",
+  "field": "GoM Offshore (synthetic)",
+  "operator": "Synthetic Operator LLC",
+  "spud_date": "2018-09-01",
+  "first_prod_date": "2019-02-15",
+  "completion": {
+    "lateral_length_ft": 0,
+    "stages": 0,
+    "proppant_lb_per_ft": 0,
+    "fluid_bbl_per_ft": 0,
+    "formation": "Pliocene"
+  },
+  "artificial_lift": {
+    "type": "Gas Lift",
+    "installed_date": "2019-02-15",
+    "pump_spec": {
+      "injection_rate_mscfd_design": 1500,
+      "valve_count": 6
+    }
+  },
+  "production_history": [
+    {
+      "day": 30,
+      "oil_bopd": 620.6,
+      "water_bwpd": 322.7,
+      "gas_mcfd": 1107.7
+    },
+    {
+      "day": 60,
+      "oil_bopd": 629.5,
+      "water_bwpd": 339.9,
+      "gas_mcfd": 1114.3
+    },
+    {
+      "day": 90,
+      "oil_bopd": 605.5,
+      "water_bwpd": 339.1,
+      "gas_mcfd": 1062.6
+    },
+    {
+      "day": 120,
+      "oil_bopd": 555.5,
+      "water_bwpd": 322.2,
+      "gas_mcfd": 966.6
+    },
+    {
+      "day": 180,
+      "oil_bopd": 465.9,
+      "water_bwpd": 288.9,
+      "gas_mcfd": 796.7
+    },
+    {
+      "day": 240,
+      "oil_bopd": 423.2,
+      "water_bwpd": 279.3,
+      "gas_mcfd": 711.0
+    },
+    {
+      "day": 300,
+      "oil_bopd": 374.9,
+      "water_bwpd": 262.4,
+      "gas_mcfd": 618.6
+    },
+    {
+      "day": 365,
+      "oil_bopd": 335.7,
+      "water_bwpd": 249.5,
+      "gas_mcfd": 543.0
+    },
+    {
+      "day": 450,
+      "oil_bopd": 318.1,
+      "water_bwpd": 254.5,
+      "gas_mcfd": 501.1
+    },
+    {
+      "day": 540,
+      "oil_bopd": 275.7,
+      "water_bwpd": 237.1,
+      "gas_mcfd": 421.7
+    },
+    {
+      "day": 630,
+      "oil_bopd": 234.6,
+      "water_bwpd": 215.8,
+      "gas_mcfd": 348.3
+    },
+    {
+      "day": 720,
+      "oil_bopd": 229.9,
+      "water_bwpd": 225.3,
+      "gas_mcfd": 331.1
+    },
+    {
+      "day": 810,
+      "oil_bopd": 203.9,
+      "water_bwpd": 212.0,
+      "gas_mcfd": 284.4
+    },
+    {
+      "day": 900,
+      "oil_bopd": 191.9,
+      "water_bwpd": 211.1,
+      "gas_mcfd": 259.1
+    },
+    {
+      "day": 990,
+      "oil_bopd": 175.7,
+      "water_bwpd": 203.9,
+      "gas_mcfd": 229.3
+    }
+  ],
+  "esp_readings": [],
+  "scada_recent": [],
+  "dyno_cards": [],
+  "notes": [
+    "Stable production, on type curve. Routine surveillance."
+  ]
+}

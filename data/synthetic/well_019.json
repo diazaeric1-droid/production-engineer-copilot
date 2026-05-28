@@ -1,0 +1,122 @@
+{
+  "well_id": "ED-019H",
+  "api_number": "42-109-10019",
+  "field": "Eagle Ford (synthetic)",
+  "operator": "Synthetic Operator LLC",
+  "spud_date": "2017-11-01",
+  "first_prod_date": "2018-02-01",
+  "completion": {
+    "lateral_length_ft": 7500,
+    "stages": 30,
+    "proppant_lb_per_ft": 1800,
+    "fluid_bbl_per_ft": 40,
+    "formation": "Eagle Ford"
+  },
+  "artificial_lift": {
+    "type": "Plunger Lift",
+    "installed_date": "2020-06-01",
+    "pump_spec": {
+      "plunger_type": "Bypass",
+      "cycles_per_day_target": 24
+    }
+  },
+  "production_history": [
+    {
+      "day": 30,
+      "oil_bopd": 271.2,
+      "water_bwpd": 141.0,
+      "gas_mcfd": 484.0
+    },
+    {
+      "day": 60,
+      "oil_bopd": 259.9,
+      "water_bwpd": 140.3,
+      "gas_mcfd": 460.0
+    },
+    {
+      "day": 90,
+      "oil_bopd": 262.7,
+      "water_bwpd": 147.1,
+      "gas_mcfd": 461.0
+    },
+    {
+      "day": 120,
+      "oil_bopd": 247.6,
+      "water_bwpd": 143.6,
+      "gas_mcfd": 430.9
+    },
+    {
+      "day": 180,
+      "oil_bopd": 217.4,
+      "water_bwpd": 134.8,
+      "gas_mcfd": 371.7
+    },
+    {
+      "day": 240,
+      "oil_bopd": 199.5,
+      "water_bwpd": 131.7,
+      "gas_mcfd": 335.2
+    },
+    {
+      "day": 300,
+      "oil_bopd": 193.4,
+      "water_bwpd": 135.4,
+      "gas_mcfd": 319.1
+    },
+    {
+      "day": 365,
+      "oil_bopd": 161.4,
+      "water_bwpd": 120.0,
+      "gas_mcfd": 261.1
+    },
+    {
+      "day": 450,
+      "oil_bopd": 153.4,
+      "water_bwpd": 122.7,
+      "gas_mcfd": 241.5
+    },
+    {
+      "day": 540,
+      "oil_bopd": 132.9,
+      "water_bwpd": 114.3,
+      "gas_mcfd": 203.3
+    },
+    {
+      "day": 630,
+      "oil_bopd": 120.2,
+      "water_bwpd": 110.6,
+      "gas_mcfd": 178.6
+    },
+    {
+      "day": 720,
+      "oil_bopd": 116.9,
+      "water_bwpd": 114.6,
+      "gas_mcfd": 168.3
+    },
+    {
+      "day": 810,
+      "oil_bopd": 63.5,
+      "water_bwpd": 110.0,
+      "gas_mcfd": 147.6
+    },
+    {
+      "day": 900,
+      "oil_bopd": 58.4,
+      "water_bwpd": 107.1,
+      "gas_mcfd": 131.5
+    },
+    {
+      "day": 990,
+      "oil_bopd": 55.4,
+      "water_bwpd": 107.0,
+      "gas_mcfd": 120.4
+    }
+  ],
+  "esp_readings": [],
+  "scada_recent": [],
+  "dyno_cards": [],
+  "notes": [
+    "Cycle count down 40%. Plunger arrival times erratic.",
+    "Suspected plunger sticking \u2014 paraffin buildup likely."
+  ]
+}

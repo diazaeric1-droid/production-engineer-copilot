@@ -1,0 +1,141 @@
+{
+  "well_id": "ED-006H",
+  "api_number": "42-109-10006",
+  "field": "Midland Basin (synthetic)",
+  "operator": "Synthetic Operator LLC",
+  "spud_date": "2021-08-22",
+  "first_prod_date": "2021-11-15",
+  "completion": {
+    "lateral_length_ft": 10200,
+    "stages": 50,
+    "proppant_lb_per_ft": 2500,
+    "fluid_bbl_per_ft": 58,
+    "formation": "Wolfcamp A"
+  },
+  "artificial_lift": {
+    "type": "ESP",
+    "installed_date": "2023-06-10",
+    "pump_spec": {
+      "model": "Centrilift FC-2200",
+      "stages": 200,
+      "por_min_bfpd": 1500,
+      "por_max_bfpd": 3000,
+      "motor_temp_max_f": 350,
+      "motor_amps_nameplate": 60
+    }
+  },
+  "production_history": [
+    {
+      "day": 30,
+      "oil_bopd": 1132.2,
+      "water_bwpd": 588.7,
+      "gas_mcfd": 2021.0
+    },
+    {
+      "day": 60,
+      "oil_bopd": 1036.4,
+      "water_bwpd": 559.6,
+      "gas_mcfd": 1834.4
+    },
+    {
+      "day": 90,
+      "oil_bopd": 899.1,
+      "water_bwpd": 503.5,
+      "gas_mcfd": 1577.9
+    },
+    {
+      "day": 120,
+      "oil_bopd": 820.1,
+      "water_bwpd": 475.7,
+      "gas_mcfd": 1427.0
+    },
+    {
+      "day": 180,
+      "oil_bopd": 776.6,
+      "water_bwpd": 481.5,
+      "gas_mcfd": 1327.9
+    },
+    {
+      "day": 240,
+      "oil_bopd": 694.9,
+      "water_bwpd": 458.7,
+      "gas_mcfd": 1167.5
+    },
+    {
+      "day": 300,
+      "oil_bopd": 574.1,
+      "water_bwpd": 401.9,
+      "gas_mcfd": 947.2
+    },
+    {
+      "day": 365,
+      "oil_bopd": 537.5,
+      "water_bwpd": 399.5,
+      "gas_mcfd": 869.4
+    },
+    {
+      "day": 450,
+      "oil_bopd": 453.9,
+      "water_bwpd": 363.1,
+      "gas_mcfd": 714.9
+    },
+    {
+      "day": 540,
+      "oil_bopd": 379.0,
+      "water_bwpd": 326.0,
+      "gas_mcfd": 579.9
+    },
+    {
+      "day": 630,
+      "oil_bopd": 355.1,
+      "water_bwpd": 326.7,
+      "gas_mcfd": 527.3
+    },
+    {
+      "day": 720,
+      "oil_bopd": 338.1,
+      "water_bwpd": 331.4,
+      "gas_mcfd": 486.9
+    },
+    {
+      "day": 810,
+      "oil_bopd": 284.7,
+      "water_bwpd": 296.1,
+      "gas_mcfd": 397.2
+    },
+    {
+      "day": 900,
+      "oil_bopd": 281.6,
+      "water_bwpd": 309.7,
+      "gas_mcfd": 380.1
+    },
+    {
+      "day": 990,
+      "oil_bopd": 209.1,
+      "water_bwpd": 242.6,
+      "gas_mcfd": 272.9
+    }
+  ],
+  "esp_readings": [
+    {
+      "date": "2026-05-21",
+      "bfpd": 2100,
+      "intake_pressure_psi": 18,
+      "motor_temp_f": 320,
+      "motor_amps": 55
+    },
+    {
+      "date": "2026-05-25",
+      "bfpd": 1980,
+      "intake_pressure_psi": 14,
+      "motor_temp_f": 325,
+      "motor_amps": 52
+    }
+  ],
+  "scada_recent": [],
+  "dyno_cards": [],
+  "notes": [
+    "High GLR field. Casing pressure trending up.",
+    "Gas separator not currently installed."
+  ]
+}

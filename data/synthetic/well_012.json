@@ -1,0 +1,140 @@
+{
+  "well_id": "ED-012H",
+  "api_number": "42-109-10012",
+  "field": "Delaware Basin (synthetic)",
+  "operator": "Synthetic Operator LLC",
+  "spud_date": "2022-04-10",
+  "first_prod_date": "2022-07-01",
+  "completion": {
+    "lateral_length_ft": 9800,
+    "stages": 48,
+    "proppant_lb_per_ft": 2300,
+    "fluid_bbl_per_ft": 52,
+    "formation": "Wolfcamp B"
+  },
+  "artificial_lift": {
+    "type": "ESP",
+    "installed_date": "2024-01-15",
+    "pump_spec": {
+      "model": "REDA 538-D2700N",
+      "stages": 180,
+      "por_min_bfpd": 1800,
+      "por_max_bfpd": 3400,
+      "motor_temp_max_f": 350,
+      "motor_amps_nameplate": 65
+    }
+  },
+  "production_history": [
+    {
+      "day": 30,
+      "oil_bopd": 864.9,
+      "water_bwpd": 449.8,
+      "gas_mcfd": 1543.9
+    },
+    {
+      "day": 60,
+      "oil_bopd": 795.0,
+      "water_bwpd": 429.3,
+      "gas_mcfd": 1407.1
+    },
+    {
+      "day": 90,
+      "oil_bopd": 759.7,
+      "water_bwpd": 425.5,
+      "gas_mcfd": 1333.4
+    },
+    {
+      "day": 120,
+      "oil_bopd": 627.4,
+      "water_bwpd": 363.9,
+      "gas_mcfd": 1091.7
+    },
+    {
+      "day": 180,
+      "oil_bopd": 521.3,
+      "water_bwpd": 323.2,
+      "gas_mcfd": 891.4
+    },
+    {
+      "day": 240,
+      "oil_bopd": 449.9,
+      "water_bwpd": 296.9,
+      "gas_mcfd": 755.8
+    },
+    {
+      "day": 300,
+      "oil_bopd": 398.5,
+      "water_bwpd": 278.9,
+      "gas_mcfd": 657.5
+    },
+    {
+      "day": 365,
+      "oil_bopd": 366.2,
+      "water_bwpd": 272.2,
+      "gas_mcfd": 592.4
+    },
+    {
+      "day": 450,
+      "oil_bopd": 324.2,
+      "water_bwpd": 259.4,
+      "gas_mcfd": 510.6
+    },
+    {
+      "day": 540,
+      "oil_bopd": 141.2,
+      "water_bwpd": 243.0,
+      "gas_mcfd": 432.3
+    },
+    {
+      "day": 630,
+      "oil_bopd": 128.7,
+      "water_bwpd": 236.7,
+      "gas_mcfd": 382.0
+    },
+    {
+      "day": 720,
+      "oil_bopd": 110.8,
+      "water_bwpd": 217.2,
+      "gas_mcfd": 319.1
+    },
+    {
+      "day": 810,
+      "oil_bopd": 107.5,
+      "water_bwpd": 223.5,
+      "gas_mcfd": 299.8
+    },
+    {
+      "day": 900,
+      "oil_bopd": 90.2,
+      "water_bwpd": 198.3,
+      "gas_mcfd": 243.4
+    },
+    {
+      "day": 990,
+      "oil_bopd": 95.3,
+      "water_bwpd": 221.1,
+      "gas_mcfd": 248.7
+    }
+  ],
+  "esp_readings": [
+    {
+      "date": "2026-05-21",
+      "bfpd": 950,
+      "intake_pressure_psi": 75,
+      "motor_temp_f": 305,
+      "motor_amps": 45
+    },
+    {
+      "date": "2026-05-25",
+      "bfpd": 920,
+      "intake_pressure_psi": 73,
+      "motor_temp_f": 308,
+      "motor_amps": 44
+    }
+  ],
+  "scada_recent": [],
+  "dyno_cards": [],
+  "notes": [
+    "Rate well below ESP POR floor. End of ESP economic life. Adjacent wells converted to beam pumps successfully."
+  ]
+}

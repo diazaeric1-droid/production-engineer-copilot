@@ -1,0 +1,57 @@
+{
+  "well_id": "ED-001H",
+  "api_number": "42-109-12345",
+  "field": "Delaware Basin (synthetic)",
+  "operator": "Synthetic Operator LLC",
+  "spud_date": "2022-03-15",
+  "first_prod_date": "2022-06-01",
+  "completion": {
+    "lateral_length_ft": 10500,
+    "stages": 52,
+    "proppant_lb_per_ft": 2400,
+    "fluid_bbl_per_ft": 55,
+    "formation": "Wolfcamp A"
+  },
+  "artificial_lift": {
+    "type": "ESP",
+    "installed_date": "2023-11-01",
+    "pump_spec": {
+      "model": "REDA 538-D2700N",
+      "stages": 180,
+      "por_min_bfpd": 1800,
+      "por_max_bfpd": 3400,
+      "motor_temp_max_f": 350,
+      "motor_amps_nameplate": 65
+    }
+  },
+  "production_history": [
+    {"day": 30, "oil_bopd": 1180, "water_bwpd": 920, "gas_mcfd": 2100},
+    {"day": 60, "oil_bopd": 920, "water_bwpd": 1100, "gas_mcfd": 1850},
+    {"day": 90, "oil_bopd": 760, "water_bwpd": 1300, "gas_mcfd": 1600},
+    {"day": 120, "oil_bopd": 640, "water_bwpd": 1450, "gas_mcfd": 1420},
+    {"day": 180, "oil_bopd": 510, "water_bwpd": 1650, "gas_mcfd": 1180},
+    {"day": 240, "oil_bopd": 430, "water_bwpd": 1780, "gas_mcfd": 1020},
+    {"day": 300, "oil_bopd": 380, "water_bwpd": 1850, "gas_mcfd": 920},
+    {"day": 365, "oil_bopd": 340, "water_bwpd": 1900, "gas_mcfd": 840},
+    {"day": 450, "oil_bopd": 280, "water_bwpd": 1920, "gas_mcfd": 720},
+    {"day": 540, "oil_bopd": 240, "water_bwpd": 1900, "gas_mcfd": 640},
+    {"day": 630, "oil_bopd": 200, "water_bwpd": 1850, "gas_mcfd": 560},
+    {"day": 720, "oil_bopd": 165, "water_bwpd": 1780, "gas_mcfd": 490},
+    {"day": 810, "oil_bopd": 138, "water_bwpd": 1700, "gas_mcfd": 430},
+    {"day": 900, "oil_bopd": 105, "water_bwpd": 1620, "gas_mcfd": 380},
+    {"day": 990, "oil_bopd": 82, "water_bwpd": 1550, "gas_mcfd": 320}
+  ],
+  "esp_readings": [
+    {"date": "2026-05-21", "bfpd": 1720, "intake_pressure_psi": 38, "motor_temp_f": 295, "motor_amps": 76},
+    {"date": "2026-05-22", "bfpd": 1680, "intake_pressure_psi": 41, "motor_temp_f": 298, "motor_amps": 78},
+    {"date": "2026-05-23", "bfpd": 1655, "intake_pressure_psi": 35, "motor_temp_f": 302, "motor_amps": 79},
+    {"date": "2026-05-24", "bfpd": 1640, "intake_pressure_psi": 33, "motor_temp_f": 305, "motor_amps": 81},
+    {"date": "2026-05-25", "bfpd": 1622, "intake_pressure_psi": 31, "motor_temp_f": 308, "motor_amps": 82}
+  ],
+  "scada_recent": [],
+  "dyno_cards": [],
+  "notes": [
+    "Field-wide scale issue reported in adjacent wells last quarter.",
+    "Last chemical treatment (scale inhibitor): 2026-02-15."
+  ]
+}

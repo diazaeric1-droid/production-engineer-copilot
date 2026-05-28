@@ -1,0 +1,130 @@
+{
+  "well_id": "ED-020H",
+  "api_number": "42-109-10020",
+  "field": "Permian marginal (synthetic)",
+  "operator": "Synthetic Operator LLC",
+  "spud_date": "2005-01-15",
+  "first_prod_date": "2005-04-01",
+  "completion": {
+    "lateral_length_ft": 0,
+    "stages": 0,
+    "proppant_lb_per_ft": 0,
+    "fluid_bbl_per_ft": 0,
+    "formation": "Spraberry"
+  },
+  "artificial_lift": {
+    "type": "Beam Pump",
+    "installed_date": "2010-01-01",
+    "pump_spec": {
+      "model": "C-114D-143-64",
+      "stroke_in": 64,
+      "spm": 5,
+      "plunger_in": 1.5
+    }
+  },
+  "production_history": [
+    {
+      "day": 30,
+      "oil_bopd": 3.508401536653104,
+      "water_bwpd": 90,
+      "gas_mcfd": 8
+    },
+    {
+      "day": 60,
+      "oil_bopd": 3.7727811885179854,
+      "water_bwpd": 90,
+      "gas_mcfd": 8
+    },
+    {
+      "day": 90,
+      "oil_bopd": 3.3758932973626177,
+      "water_bwpd": 90,
+      "gas_mcfd": 8
+    },
+    {
+      "day": 120,
+      "oil_bopd": 3.6296665409953768,
+      "water_bwpd": 90,
+      "gas_mcfd": 8
+    },
+    {
+      "day": 180,
+      "oil_bopd": 3.4479427782529264,
+      "water_bwpd": 90,
+      "gas_mcfd": 8
+    },
+    {
+      "day": 240,
+      "oil_bopd": 3.538798385997087,
+      "water_bwpd": 90,
+      "gas_mcfd": 8
+    },
+    {
+      "day": 300,
+      "oil_bopd": 3.7380628101747653,
+      "water_bwpd": 90,
+      "gas_mcfd": 8
+    },
+    {
+      "day": 365,
+      "oil_bopd": 3.172711726706611,
+      "water_bwpd": 90,
+      "gas_mcfd": 8
+    },
+    {
+      "day": 450,
+      "oil_bopd": 4.3369549102741844,
+      "water_bwpd": 90,
+      "gas_mcfd": 8
+    },
+    {
+      "day": 540,
+      "oil_bopd": 3.097593047400119,
+      "water_bwpd": 90,
+      "gas_mcfd": 8
+    },
+    {
+      "day": 630,
+      "oil_bopd": 3.014324554884907,
+      "water_bwpd": 90,
+      "gas_mcfd": 8
+    },
+    {
+      "day": 720,
+      "oil_bopd": 3.963244349400027,
+      "water_bwpd": 90,
+      "gas_mcfd": 8
+    },
+    {
+      "day": 810,
+      "oil_bopd": 3.8166650775851743,
+      "water_bwpd": 90,
+      "gas_mcfd": 8
+    },
+    {
+      "day": 900,
+      "oil_bopd": 3.7496479268208622,
+      "water_bwpd": 90,
+      "gas_mcfd": 8
+    },
+    {
+      "day": 990,
+      "oil_bopd": 3.751338203705712,
+      "water_bwpd": 90,
+      "gas_mcfd": 8
+    }
+  ],
+  "esp_readings": [],
+  "scada_recent": [],
+  "dyno_cards": [
+    {
+      "date": "2026-05-25",
+      "pattern": "Low fluid load, marginal economics.",
+      "fillage_pct": 70
+    }
+  ],
+  "notes": [
+    "20+ year old well. <5 bopd for 6 months. Workover OPEX exceeds revenue.",
+    "P&A candidate."
+  ]
+}

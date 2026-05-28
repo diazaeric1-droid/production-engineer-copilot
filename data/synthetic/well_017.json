@@ -1,0 +1,122 @@
+{
+  "well_id": "ED-017H",
+  "api_number": "42-109-10017",
+  "field": "GoM Offshore (synthetic)",
+  "operator": "Synthetic Operator LLC",
+  "spud_date": "2018-09-01",
+  "first_prod_date": "2019-02-15",
+  "completion": {
+    "lateral_length_ft": 0,
+    "stages": 0,
+    "proppant_lb_per_ft": 0,
+    "fluid_bbl_per_ft": 0,
+    "formation": "Pliocene"
+  },
+  "artificial_lift": {
+    "type": "Gas Lift",
+    "installed_date": "2019-02-15",
+    "pump_spec": {
+      "injection_rate_mscfd_design": 1500,
+      "valve_count": 6
+    }
+  },
+  "production_history": [
+    {
+      "day": 30,
+      "oil_bopd": 719.7,
+      "water_bwpd": 374.2,
+      "gas_mcfd": 1284.6
+    },
+    {
+      "day": 60,
+      "oil_bopd": 726.6,
+      "water_bwpd": 392.4,
+      "gas_mcfd": 1286.1
+    },
+    {
+      "day": 90,
+      "oil_bopd": 613.4,
+      "water_bwpd": 343.5,
+      "gas_mcfd": 1076.5
+    },
+    {
+      "day": 120,
+      "oil_bopd": 607.3,
+      "water_bwpd": 352.2,
+      "gas_mcfd": 1056.6
+    },
+    {
+      "day": 180,
+      "oil_bopd": 544.1,
+      "water_bwpd": 337.4,
+      "gas_mcfd": 930.4
+    },
+    {
+      "day": 240,
+      "oil_bopd": 445.6,
+      "water_bwpd": 294.1,
+      "gas_mcfd": 748.6
+    },
+    {
+      "day": 300,
+      "oil_bopd": 419.5,
+      "water_bwpd": 293.7,
+      "gas_mcfd": 692.2
+    },
+    {
+      "day": 365,
+      "oil_bopd": 317.6,
+      "water_bwpd": 236.1,
+      "gas_mcfd": 513.8
+    },
+    {
+      "day": 450,
+      "oil_bopd": 317.5,
+      "water_bwpd": 254.0,
+      "gas_mcfd": 500.1
+    },
+    {
+      "day": 540,
+      "oil_bopd": 293.2,
+      "water_bwpd": 252.2,
+      "gas_mcfd": 448.6
+    },
+    {
+      "day": 630,
+      "oil_bopd": 249.6,
+      "water_bwpd": 229.7,
+      "gas_mcfd": 370.7
+    },
+    {
+      "day": 720,
+      "oil_bopd": 143.3,
+      "water_bwpd": 255.3,
+      "gas_mcfd": 375.1
+    },
+    {
+      "day": 810,
+      "oil_bopd": 112.1,
+      "water_bwpd": 211.9,
+      "gas_mcfd": 284.3
+    },
+    {
+      "day": 900,
+      "oil_bopd": 108.3,
+      "water_bwpd": 216.5,
+      "gas_mcfd": 265.7
+    },
+    {
+      "day": 990,
+      "oil_bopd": 102.8,
+      "water_bwpd": 216.8,
+      "gas_mcfd": 243.8
+    }
+  ],
+  "esp_readings": [],
+  "scada_recent": [],
+  "dyno_cards": [],
+  "notes": [
+    "Slugging behavior at surface. THP cycling. Suspected liquid loading.",
+    "Injection rate may be below critical Turner velocity."
+  ]
+}

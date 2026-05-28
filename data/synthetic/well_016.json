@@ -1,0 +1,129 @@
+{
+  "well_id": "ED-016H",
+  "api_number": "42-109-10016",
+  "field": "Permian conventional (synthetic)",
+  "operator": "Synthetic Operator LLC",
+  "spud_date": "2015-03-01",
+  "first_prod_date": "2015-06-01",
+  "completion": {
+    "lateral_length_ft": 0,
+    "stages": 0,
+    "proppant_lb_per_ft": 0,
+    "fluid_bbl_per_ft": 0,
+    "formation": "San Andres"
+  },
+  "artificial_lift": {
+    "type": "Beam Pump",
+    "installed_date": "2019-04-10",
+    "pump_spec": {
+      "model": "C-228D-200-74",
+      "stroke_in": 74,
+      "spm": 6.5,
+      "plunger_in": 1.75
+    }
+  },
+  "production_history": [
+    {
+      "day": 30,
+      "oil_bopd": 109.1,
+      "water_bwpd": 56.7,
+      "gas_mcfd": 194.7
+    },
+    {
+      "day": 60,
+      "oil_bopd": 112.1,
+      "water_bwpd": 60.5,
+      "gas_mcfd": 198.4
+    },
+    {
+      "day": 90,
+      "oil_bopd": 114.3,
+      "water_bwpd": 64.0,
+      "gas_mcfd": 200.6
+    },
+    {
+      "day": 120,
+      "oil_bopd": 114.2,
+      "water_bwpd": 66.2,
+      "gas_mcfd": 198.7
+    },
+    {
+      "day": 180,
+      "oil_bopd": 91.3,
+      "water_bwpd": 56.6,
+      "gas_mcfd": 156.1
+    },
+    {
+      "day": 240,
+      "oil_bopd": 93.1,
+      "water_bwpd": 61.4,
+      "gas_mcfd": 156.4
+    },
+    {
+      "day": 300,
+      "oil_bopd": 87.3,
+      "water_bwpd": 61.1,
+      "gas_mcfd": 144.0
+    },
+    {
+      "day": 365,
+      "oil_bopd": 81.3,
+      "water_bwpd": 60.5,
+      "gas_mcfd": 131.6
+    },
+    {
+      "day": 450,
+      "oil_bopd": 91.3,
+      "water_bwpd": 73.0,
+      "gas_mcfd": 143.7
+    },
+    {
+      "day": 540,
+      "oil_bopd": 76.8,
+      "water_bwpd": 66.1,
+      "gas_mcfd": 117.5
+    },
+    {
+      "day": 630,
+      "oil_bopd": 62.4,
+      "water_bwpd": 57.4,
+      "gas_mcfd": 92.7
+    },
+    {
+      "day": 720,
+      "oil_bopd": 69.6,
+      "water_bwpd": 68.3,
+      "gas_mcfd": 100.3
+    },
+    {
+      "day": 810,
+      "oil_bopd": 71.1,
+      "water_bwpd": 74.0,
+      "gas_mcfd": 99.2
+    },
+    {
+      "day": 900,
+      "oil_bopd": 3.1,
+      "water_bwpd": 68.0,
+      "gas_mcfd": 83.4
+    },
+    {
+      "day": 990,
+      "oil_bopd": 2.4,
+      "water_bwpd": 54.7,
+      "gas_mcfd": 61.5
+    }
+  ],
+  "esp_readings": [],
+  "scada_recent": [],
+  "dyno_cards": [
+    {
+      "date": "2026-05-25",
+      "pattern": "Flat card \u2014 no fluid load. Likely parted rod string.",
+      "fillage_pct": 5
+    }
+  ],
+  "notes": [
+    "Sudden production drop to near-zero. Dyno indicates parted rods. Rig needed."
+  ]
+}
