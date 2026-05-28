@@ -4,9 +4,9 @@
 
 Built by a Staff Production Engineer (ex-OXY, ex-Shell) who spent 9 years doing this work by hand.
 
-[![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://production-engineer-copilot.example.com)
-[![License](https://img.shields.io/badge/license-MIT-blue)]()
-[![Python](https://img.shields.io/badge/python-3.11+-blue)]()
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org/)
+[![Eval](https://img.shields.io/badge/eval-0.90%20agreement-brightgreen)](evals/sample_review.md)
 
 ---
 
@@ -21,6 +21,8 @@ Drop in a well file (decline curve data, dyno cards or ESP readings, last 30 day
 
 Output is a one-page review that mirrors the format you'd hand to a VP Production on a Monday morning.
 
+**See a real sample:** [`evals/sample_review.md`](evals/sample_review.md) — a complete agent output on a synthetic Delaware Basin ESP well with scale signature.
+
 ## Why this exists
 
 Production engineers spend 30–50% of their time on routine well reviews. The work is pattern-heavy, data-driven, and follows a repeatable framework — which makes it a textbook case for agentic AI. This repo is a reference implementation of that pattern, designed to be forked and adapted to your operator's data sources.
@@ -28,7 +30,7 @@ Production engineers spend 30–50% of their time on routine well reviews. The w
 ## Quick start
 
 ```bash
-git clone https://github.com/<your-user>/production-engineer-copilot
+git clone https://github.com/diazaeric1-droid/production-engineer-copilot
 cd production-engineer-copilot
 pip install -e .
 cp .env.example .env  # add your ANTHROPIC_API_KEY
