@@ -1,3 +1,4 @@
+# For local dev:  cd .. && pip install -e . && pip install streamlit plotly
+# Streamlit Cloud uses the root requirements.txt instead of this file.
 streamlit>=1.31.0
 plotly>=5.18.0
--e ..
