@@ -4,9 +4,12 @@
 
 Built by a Staff Production Engineer (ex-OXY, ex-Shell) who spent 9 years doing this work by hand.
 
+[![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://pe-copilot.streamlit.app)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org/)
-[![Eval](https://img.shields.io/badge/eval-0.90%20agreement-brightgreen)](evals/sample_review.md)
+[![Eval](https://img.shields.io/badge/eval-0.90%20agreement-blue)](evals/sample_review.md)
+
+**Try it now → [pe-copilot.streamlit.app](https://pe-copilot.streamlit.app)**
 
 ---
 
