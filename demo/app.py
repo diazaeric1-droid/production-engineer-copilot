@@ -39,37 +39,31 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    .block-container {padding-top: 1.5rem; padding-bottom: 2rem;}
-    [data-testid="stMetricValue"] {font-size: 1.6rem;}
-    [data-testid="stMetricLabel"] {font-size: 0.85rem; font-weight: 600;}
+    .block-container {padding-top: 0.6rem; padding-bottom: 2rem; max-width: 1400px;}
+    header[data-testid="stHeader"] {height: 2rem;}
+    [data-testid="stMetricValue"] {font-size: 1.3rem; line-height: 1.2;}
+    [data-testid="stMetricLabel"] {font-size: 0.75rem; font-weight: 600; opacity: 0.8;}
+    [data-testid="stMetricDelta"] {font-size: 0.75rem;}
     .stTabs [data-baseweb="tab-list"] {gap: 8px;}
-    .stTabs [data-baseweb="tab"] {padding: 0.5rem 1.25rem; font-weight: 600;}
-    div.flag-high {background: #4a1010; color: #ffb3b3; padding: 0.4rem 0.8rem;
-                   border-radius: 6px; display: inline-block; margin: 0.2rem;
-                   font-size: 0.85rem; font-weight: 600;}
-    div.flag-ok {background: #103b1a; color: #b3ffc7; padding: 0.4rem 0.8rem;
-                 border-radius: 6px; display: inline-block; margin: 0.2rem;
-                 font-size: 0.85rem; font-weight: 600;}
+    .stTabs [data-baseweb="tab"] {padding: 0.4rem 1.1rem; font-weight: 600;}
+    hr {margin: 0.4rem 0 !important;}
+    div.flag-high {background: #4a1010; color: #ffb3b3; padding: 0.3rem 0.7rem;
+                   border-radius: 6px; display: inline-block; margin: 0.15rem;
+                   font-size: 0.8rem; font-weight: 600;}
+    div.flag-ok {background: #103b1a; color: #b3ffc7; padding: 0.3rem 0.7rem;
+                 border-radius: 6px; display: inline-block; margin: 0.15rem;
+                 font-size: 0.8rem; font-weight: 600;}
+    div.app-header {
+        display: flex; align-items: center; gap: 1rem;
+        padding: 0.2rem 0 0.6rem 0;
+    }
+    .app-title {font-size: 1.5rem; font-weight: 700; line-height: 1;}
+    .app-subtitle {font-size: 0.85rem; color: #999;}
+    .eval-chip {background:#103b1a; color:#b3ffc7; padding:0.2rem 0.65rem;
+                border-radius:10px; font-size:0.75rem; font-weight:600;
+                margin-left: auto; white-space: nowrap;}
 </style>
 """, unsafe_allow_html=True)
-
-# ---------- header -----------------------------------------------------------
-
-header_l, header_r = st.columns([3, 1])
-with header_l:
-    st.markdown("# ⛽ Production Engineer Copilot")
-    st.caption("AI-driven well reviews · Built by an ex-OXY / ex-Shell Staff Production Engineer · "
-               "[GitHub](https://github.com/diazaeric1-droid/production-engineer-copilot)")
-with header_r:
-    st.markdown(
-        "<div style='text-align:right; padding-top:1.2rem;'>"
-        "<span style='background:#103b1a; color:#b3ffc7; padding:0.25rem 0.75rem; "
-        "border-radius:12px; font-size:0.85rem; font-weight:600;'>● 0.90 eval agreement</span>"
-        "</div>",
-        unsafe_allow_html=True,
-    )
-
-st.divider()
 
 # ---------- sidebar ----------------------------------------------------------
 
@@ -116,6 +110,24 @@ if well.artificial_lift.get("type") == "ESP" and well.esp_readings:
     except Exception:
         esp_diag = None
 
+# ---------- compact header (title + well meta + eval chip on one row) -------
+
+st.markdown(
+    f"<div class='app-header'>"
+    f"<div>"
+    f"<div class='app-title'>⛽ Production Engineer Copilot</div>"
+    f"<div class='app-subtitle'>"
+    f"{well.well_id} · {well.api_number} · {well.field} · "
+    f"{well.completion.get('formation', '—')} · {well.artificial_lift.get('type', '—')} lift"
+    f" — <a href='https://github.com/diazaeric1-droid/production-engineer-copilot' "
+    f"style='color:#5a9fd4;'>GitHub</a>"
+    f"</div>"
+    f"</div>"
+    f"<div class='eval-chip'>● 0.90 eval agreement</div>"
+    f"</div>",
+    unsafe_allow_html=True,
+)
+
 # ---------- KPI metrics row --------------------------------------------------
 
 k1, k2, k3, k4, k5 = st.columns(5)
@@ -145,14 +157,6 @@ with k5:
         )
     else:
         st.metric("Lift type", well.artificial_lift.get("type", "—"))
-
-# ---------- well header card -------------------------------------------------
-
-st.markdown(
-    f"**{well.well_id}** · {well.api_number} · {well.field} · "
-    f"{well.completion.get('formation', 'Unknown formation')} · "
-    f"{well.artificial_lift.get('type', '')} lift"
-)
 
 # ---------- tabs -------------------------------------------------------------
 
