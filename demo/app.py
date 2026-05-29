@@ -39,8 +39,9 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    .block-container {padding-top: 0.6rem; padding-bottom: 2rem; max-width: 1400px;}
-    header[data-testid="stHeader"] {height: 2rem;}
+    /* Don't touch Streamlit's sticky header — that breaks scroll behavior.
+       Just trim the gap between Streamlit's toolbar and our content. */
+    .block-container {padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1400px;}
     [data-testid="stMetricValue"] {font-size: 1.3rem; line-height: 1.2;}
     [data-testid="stMetricLabel"] {font-size: 0.75rem; font-weight: 600; opacity: 0.8;}
     [data-testid="stMetricDelta"] {font-size: 0.75rem;}
@@ -55,10 +56,10 @@ st.markdown("""
                  font-size: 0.8rem; font-weight: 600;}
     div.app-header {
         display: flex; align-items: center; gap: 1rem;
-        padding: 0.2rem 0 0.6rem 0;
+        padding: 0.2rem 0 0.5rem 0;
     }
-    .app-title {font-size: 1.5rem; font-weight: 700; line-height: 1;}
-    .app-subtitle {font-size: 0.85rem; color: #999;}
+    .app-title {font-size: 1.4rem; font-weight: 700; line-height: 1.1;}
+    .app-subtitle {font-size: 0.82rem; color: #999;}
     .eval-chip {background:#103b1a; color:#b3ffc7; padding:0.2rem 0.65rem;
                 border-radius:10px; font-size:0.75rem; font-weight:600;
                 margin-left: auto; white-space: nowrap;}
