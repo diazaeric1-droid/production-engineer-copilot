@@ -24,7 +24,12 @@ Drop in a well file (decline curve data, dyno cards or ESP readings, last 30 day
 
 Output is a one-page review that mirrors the format you'd hand to a VP Production on a Monday morning.
 
-**See a real sample:** [`evals/sample_review.md`](evals/sample_review.md) — a complete agent output on a synthetic Delaware Basin ESP well with scale signature.
+**See real samples:**
+- [`evals/sample_review.md`](evals/sample_review.md) — flagship demo: Delaware Basin ESP with compound scale + gas + below-POR signature; agent surfaces a sequenced 3-step workover
+- [`evals/samples/case_005_gas_interference.md`](evals/samples/case_005_gas_interference.md) — gas-interference well: agent defers ESP swap, recommends low-cost VSD + separator first
+- [`evals/samples/case_014_healthy_beam_pump.md`](evals/samples/case_014_healthy_beam_pump.md) — healthy beam pump: agent correctly recommends "continue surveillance" rather than inventing interventions
+- [`evals/samples/case_020_p_and_a.md`](evals/samples/case_020_p_and_a.md) — sub-economic stripper: agent recommends P&A with explicit negative-NPV evidence
+- [Index of all samples](evals/samples/README.md)
 
 ## Why this exists
 

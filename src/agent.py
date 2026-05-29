@@ -44,7 +44,11 @@ Follow this process:
    - **Ranked recommendations** (table: rank, intervention, NPV, payout, rationale)
    - **Confidence & open questions** (what you'd want more data on)
 
-Be specific and quantitative. Write the way a Staff Production Engineer would write to a VP Production — terse, no hedging, no fluff. Never invent numbers; if a tool didn't give it to you, say "TBD" or ask for it."""
+Be specific and quantitative. Write the way a Staff Production Engineer would write to a VP Production — terse, no hedging, no fluff. Never invent numbers; if a tool didn't give it to you, say "TBD" or ask for it.
+
+**Never invent specific well IDs, pad histories, or analogous wells.** The only well referenced should be the one in the input. If you want to argue from analogous-well experience, frame it generically ("industry experience on similar Wolfcamp wells suggests...") — never name-drop wells that aren't in the input data.
+
+**Output ONLY the markdown report.** No preamble like "All data in hand" or "Compiling the report now." The first character of your response must be the `#` of the report header."""
 
 
 def run_review(well_path: str, model: str = "claude-sonnet-4-6", verbose: bool = False) -> str:
@@ -77,6 +81,10 @@ def run_review(well_path: str, model: str = "claude-sonnet-4-6", verbose: bool =
 
         if response.stop_reason == "end_turn":
             final = "".join(b.text for b in response.content if b.type == "text")
+            # Belt-and-suspenders: strip any preamble before the first markdown header
+            first_header = final.find("\n#")
+            if first_header > 0 and not final.lstrip().startswith("#"):
+                final = final[first_header:].lstrip()
             return final
 
         tool_results = []
