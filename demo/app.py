@@ -144,6 +144,22 @@ if well.artificial_lift.get("type") == "ESP" and well.esp_readings:
 
 # ---------- compact header (title + well meta + eval chip on one row) -------
 
+def _eval_chip_text() -> str:
+    """Read the committed blind-holdout result so the header chip never goes stale."""
+    try:
+        rs = json.loads((REPO_ROOT / "evals" / "results" / "holdout"
+                         / "summary_holdout.json").read_text())
+        sc = [r for r in rs if "recommendation_match" in r]
+        if sc:
+            agree = sum(1 for r in sc if r.get("recommendation_match")) / len(sc)
+            return f"● {agree:.2f} blind-holdout eval ({len(sc)} cases)"
+    except Exception:
+        pass
+    return "● eval-gated (see Evals tab)"
+
+
+_EVAL_CHIP = _eval_chip_text()
+
 st.markdown(
     f"<div class='app-header'>"
     f"<div>"
@@ -155,7 +171,7 @@ st.markdown(
     f"style='color:#5a9fd4;'>GitHub</a>"
     f"</div>"
     f"</div>"
-    f"<div class='eval-chip'>● 0.90 eval agreement</div>"
+    f"<div class='eval-chip'>{_EVAL_CHIP}</div>"
     f"<div class='ver-chip'>v{APP_VERSION}</div>"
     f"</div>",
     unsafe_allow_html=True,
