@@ -26,35 +26,145 @@ def evaluate_intervention(
     realized_price_per_bbl: float = 65.0,
     discount_rate: float = 0.10,
     opex_per_bbl: float = 12.0,
+    prob_success: float = 1.0,
+    deferred_days: float = 0.0,
+    base_rate_bopd: float = 0.0,
+    water_cut_pct: float = 0.0,
+    water_disposal_per_bbl: float = 0.0,
 ) -> InterventionEconomics:
-    """Simple NPV of an intervention assuming exponential decline of the uplift."""
+    """Risked NPV of an intervention assuming exponential decline of the uplift.
+
+    VP-grade additions over a bare oil-NPV (all default to a no-op so the point
+    estimate stays directly comparable to the Monte-Carlo path):
+      - prob_success         : geological/mechanical chance the uplift is realized.
+                               Inflows are risked by this; the cost is spent regardless.
+      - deferred_days        : production deferred while the well is down for the job,
+                               valued at the *base* rate (barrels you'd otherwise sell).
+      - water_disposal_per_bbl + water_cut_pct : SWD/LOE drag. Each incremental oil bbl
+                               drags water at the current cut; disposing it eats net margin.
+    """
     days_per_month = 365.25 / 12  # avoid the 360-day-year undercount
     months = np.arange(1, horizon_years * 12 + 1)
     monthly_rate = incremental_rate_bopd * np.exp(-uplift_decline_per_yr * (months / 12))
     monthly_vol = monthly_rate * days_per_month  # bbl/month
-    monthly_revenue = monthly_vol * (realized_price_per_bbl - opex_per_bbl)
-    discount_factors = (1 + discount_rate / 12) ** months
-    npv = float(np.sum(monthly_revenue / discount_factors) - treatment_cost_usd)
 
-    # Payout: cumulative[i] is the cumulative net revenue at the END of month i+1,
-    # so the recovery month is the 1-based (payout_idx + 1).
-    cumulative = np.cumsum(monthly_revenue)
-    payout_idx = int(np.searchsorted(cumulative, treatment_cost_usd))
+    # Net margin per incremental oil bbl, after lifting cost AND the water it drags.
+    # water/oil ratio = wc/(1-wc); each incremental oil bbl carries that much water to dispose.
+    wc = min(max(water_cut_pct / 100.0, 0.0), 0.999)
+    wor = wc / (1.0 - wc) if wc < 1.0 else 0.0
+    net_margin = (realized_price_per_bbl - opex_per_bbl) - water_disposal_per_bbl * wor
+    monthly_revenue = monthly_vol * net_margin
+
+    # Risk the inflows by chance-of-success; the capital is sunk regardless.
+    p = min(max(prob_success, 0.0), 1.0)
+    deferred_cost = (deferred_days * base_rate_bopd) * max(net_margin, 0.0)
+    total_cost = treatment_cost_usd + deferred_cost
+
+    discount_factors = (1 + discount_rate / 12) ** months
+    pv_inflows = float(np.sum(monthly_revenue / discount_factors)) * p
+    npv = pv_inflows - total_cost
+
+    # Payout uses the risk-weighted expected revenue stream.
+    cumulative = np.cumsum(monthly_revenue * p)
+    payout_idx = int(np.searchsorted(cumulative, total_cost))
     payout_months = float(payout_idx + 1) if payout_idx < len(months) else float("inf")
 
     first_year_bbl = float(monthly_vol[:12].sum())
     eur = float(monthly_vol.sum())
-    # Discounted profitability index = PV of inflows / investment (NOT an IRR / rate of return).
-    pi = (npv + treatment_cost_usd) / treatment_cost_usd if treatment_cost_usd > 0 else 0.0
+    # Discounted profitability index = PV of (risked) inflows / total investment.
+    pi = pv_inflows / total_cost if total_cost > 0 else 0.0
 
     return InterventionEconomics(
         name=name,
-        treatment_cost_usd=treatment_cost_usd,
+        treatment_cost_usd=total_cost,
         incremental_eur_bbl=eur,
         incremental_first_year_bbl=first_year_bbl,
         npv_10pct_usd=npv,
         payout_months=payout_months,
         profitability_index=float(pi),
+    )
+
+
+@dataclass
+class ESPLifeVerdict:
+    recommendation: str          # "esp_swap" | "esp_to_beam_conversion"
+    swap_npv_usd: float
+    beam_npv_usd: float
+    remaining_eur_bbl: float
+    years_to_deplete: float
+    rationale: str
+
+
+def evaluate_esp_economic_life(
+    current_oil_bopd: float,
+    current_bfpd: float,
+    por_min_bfpd: float,
+    well_age_years: float,
+    remaining_eur_bbl: float,
+    *,
+    realized_price_per_bbl: float = 65.0,
+    opex_per_bbl: float = 12.0,
+    discount_rate: float = 0.10,
+    esp_workover_cost_usd: float = 325_000.0,
+    esp_run_life_years: float = 2.5,
+    beam_conversion_cost_usd: float = 275_000.0,
+    beam_run_life_years: float = 6.0,
+) -> ESPLifeVerdict:
+    """Decide ESP-swap vs ESP-to-beam conversion on lifecycle economics.
+
+    The crux a senior PE weighs: a right-size ESP swap restores rate, but on a low-rate,
+    depleted, gassy well an ESP re-fails every ~2-3 yrs (each pull ≈ $325K), while a beam
+    unit on the same well runs 5-8 yrs with cheap rod jobs. Over the well's *remaining
+    life* the conversion's lower lift-failure cadence usually wins once the well is old and
+    producing well below the ESP POR floor with thin reserves.
+
+    Models each option as: lift the remaining EUR over its expected life, minus the
+    discounted stream of lift interventions over that span.
+    """
+    years_to_deplete = max(remaining_eur_bbl / max(current_oil_bopd * 365.0, 1.0), 0.5)
+    years_to_deplete = min(years_to_deplete, 15.0)
+
+    margin = realized_price_per_bbl - opex_per_bbl
+    gross_pv = remaining_eur_bbl * margin / (1 + discount_rate) ** (years_to_deplete / 2)
+
+    def _lift_cost(run_life: float, per_job: float) -> float:
+        # Discounted stream of lift interventions across remaining life (first job at t=0).
+        n_jobs = max(1, int(np.ceil(years_to_deplete / run_life)))
+        return float(sum(per_job / (1 + discount_rate) ** (i * run_life) for i in range(n_jobs)))
+
+    swap_cost = _lift_cost(esp_run_life_years, esp_workover_cost_usd)
+    beam_cost = _lift_cost(beam_run_life_years, beam_conversion_cost_usd)
+
+    swap_npv = gross_pv - swap_cost
+    beam_npv = gross_pv - beam_cost
+
+    below_por = current_bfpd < por_min_bfpd
+    old = well_age_years >= 10.0
+
+    if beam_npv > swap_npv and below_por and old:
+        rec = "esp_to_beam_conversion"
+        rationale = (
+            f"Well is {well_age_years:.0f} yr old, {current_bfpd:.0f} BFPD (below {por_min_bfpd:.0f} "
+            f"POR floor), ~{remaining_eur_bbl/1000:.0f} MBbl left over ~{years_to_deplete:.1f} yr. "
+            f"Beam conversion avoids the ~{esp_run_life_years:.1f}-yr ESP re-fail cadence "
+            f"(${esp_workover_cost_usd/1000:.0f}K/pull); lifecycle NPV ${beam_npv/1e6:.2f}M vs "
+            f"swap ${swap_npv/1e6:.2f}M."
+        )
+    else:
+        rec = "esp_swap"
+        rationale = (
+            f"Right-size ESP swap favored: lifecycle NPV ${swap_npv/1e6:.2f}M vs beam "
+            f"${beam_npv/1e6:.2f}M. Well age {well_age_years:.0f} yr / rate {current_bfpd:.0f} BFPD "
+            f"do not yet justify converting to a slower-rate rod system."
+        )
+
+    return ESPLifeVerdict(
+        recommendation=rec,
+        swap_npv_usd=float(swap_npv),
+        beam_npv_usd=float(beam_npv),
+        remaining_eur_bbl=float(remaining_eur_bbl),
+        years_to_deplete=float(years_to_deplete),
+        rationale=rationale,
     )
 
 

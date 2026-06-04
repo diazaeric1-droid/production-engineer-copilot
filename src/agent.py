@@ -21,16 +21,17 @@ Today's date: {today}
 
 Follow this process:
 1. Call `fit_decline_curve` to understand current performance vs. type curve.
-2. If the well is on ESP, call `evaluate_esp_health`.
-3. Identify candidate interventions based on diagnosis. **Important: if diagnostics are clean (well on type curve, ESP in POR, healthy intake pressure, amps within nameplate, no notes flagging issues), the correct primary recommendation is "Continue routine surveillance — no intervention warranted" and you should NOT invent interventions.** Selection heuristics for unhealthy wells:
+2. Call `analyze_water_gas_trends` on every well — a rising water cut or GOR drives interventions the oil-rate curve hides (economic-limit shifts, gas interference, liquid loading).
+3. If the well is on ESP, call `evaluate_esp_health`. **If the well is on a Beam Pump (or any rod lift) and dyno cards are available, you MUST call `interpret_dyno_card`** — the decline curve cannot see a fluid pound, pump-off, or parted rod. Do not conclude "clean / no intervention" on a beam pump without reading the dyno card first.
+4. Identify candidate interventions based on diagnosis. **Important: if diagnostics are clean (well on type curve, ESP in POR, healthy intake pressure, amps within nameplate, dyno card shows full fillage, no flags), the correct primary recommendation is "Continue routine surveillance — no intervention warranted" and you should NOT invent interventions.** Selection heuristics for unhealthy wells:
    - **Scale signal (high amps + declining intake pressure + months since last treatment)** → Primary intervention should be called "scale treatment" or "scale inhibitor squeeze + acid stimulation" — surface BOTH terms. Comes FIRST, before any mechanical work. Swapping an ESP without addressing scale yields a re-failure in 3-6 months.
-   - **Gas interference (intake pressure < 50 psi, jittery amps)** → gas separator or VSD frequency change before ESP swap.
-   - **Below POR floor with no scale or gas signal** → ESP swap (right-size the pump).
-   - **Rate well below ESP POR minimum AND well is past ESP economic life (10+ year-old well, rates < 1,000 BFPD)** → ESP-to-beam conversion.
-   - **Beam pump with low fillage on dyno card** → pump-off controller or rod string evaluation.
-   - **Plunger lift with cycle degradation and notes mentioning paraffin/wax** → paraffin treatment (hot oil + wireline plunger inspection).
+   - **Gas interference (intake pressure < 50 psi, jittery amps, rising GOR)** → gas separator or VSD frequency change before ESP swap.
+   - **Below POR floor with no scale or gas signal** → candidate for either an ESP swap OR an ESP-to-beam conversion. **When below POR, call `evaluate_esp_economic_life` (pass remaining EUR from project_recovery and well age in years) and let its lifecycle verdict break the tie** — a young well with healthy reserves favors a right-size swap; an old, depleted, below-POR well favors beam conversion because the ESP re-fail cadence destroys value. Use the verdict's recommendation as your primary.
+   - **Beam pump / rod lift** → use the `interpret_dyno_card` classification directly: fluid_pound_pumpoff → pump-off controller (POC) / SPM reduction; parted_rods → workover (rig); gas_interference → gas anchor / separator; healthy → monitor.
+   - **Plunger lift with cycle degradation and a paraffin/wax signature** → paraffin treatment (hot oil + wireline plunger inspection).
    - **Gas lift well with slugging / liquid loading signal** → gas lift optimization (injection rate adjustment, valve check, deliquification).
    - **Old well (15+ years), sustained rates < 5-10 BOPD, workover cost > expected NPV** → P&A (Plug & Abandon). State this explicitly as the primary recommendation; do not propose a workover on a sub-economic stripper well.
+   - **Insufficient data (the `fit_decline_curve` tool errors / can't fit because there are too few production points, AND there are no ESP readings or dyno cards to diagnose lift)** → the primary recommendation MUST be stated as **"Insufficient data to make a recommendation"** (use those words). Do NOT default to "continue monitoring / routine surveillance" here — "monitor" means you have *confirmed the well is healthy*, which you cannot do without a fittable decline or any lift diagnostic. And do NOT invent an intervention. List exactly which data you need to proceed (more production months, an ESP reading set, a dyno card). Honesty beats both a fabricated call and a false all-clear.
 4. Call `evaluate_intervention` for each candidate. Use these realistic uplift ranges for a Permian/Delaware unconventional well:
    - **Acid stimulation (matrix or diverted):** +80 to +200 BOPD initial, decline 0.6-0.9/yr, cost $120K-$220K
    - **ESP swap (right-sized):** +50 to +150 BOPD initial (mostly from POR restoration, not added drawdown), decline 0.5-0.7/yr, cost $250K-$400K
@@ -54,7 +55,18 @@ Be specific and quantitative. Write the way a Staff Production Engineer would wr
 def run_review(well_path: str, model: str = "claude-sonnet-4-6", verbose: bool = False) -> str:
     """Run the agent loop on a single well file. Returns the markdown report."""
     load_dotenv()
-    client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    # load_dotenv() will NOT overwrite an env var that's already set — including an empty
+    # one. A shell that exports ANTHROPIC_API_KEY="" (common in sandboxes/CI shims) would
+    # otherwise shadow the real key in .env and fail with a cryptic SDK auth error. If the
+    # key is missing or blank, let .env win.
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        load_dotenv(override=True)
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY is not set. Add it to .env or export it in your shell."
+        )
+    client = Anthropic(api_key=api_key)
     console = Console()
 
     well = WellFile.from_json(well_path)

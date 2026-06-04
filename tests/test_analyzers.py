@@ -1,9 +1,15 @@
 """Smoke tests for the deterministic analyzers."""
+import glob
+import json
+
 import numpy as np
 
-from src.analyzers.decline_curve import fit_decline, project_eur
-from src.analyzers.economics import evaluate_intervention, simulate_intervention
+from src.analyzers.decline_curve import fit_decline, project_eur, analyze_water_gas_trends
+from src.analyzers.economics import (
+    evaluate_intervention, simulate_intervention, evaluate_esp_economic_life,
+)
 from src.analyzers.esp_diagnostics import evaluate_esp
+from src.analyzers.dyno_card import evaluate_dyno_card
 
 
 def test_fit_decline_recovers_known_curve():
@@ -31,6 +37,71 @@ def test_intervention_economics_positive_npv():
     )
     assert econ.npv_10pct_usd > 0
     assert econ.payout_months < 12
+
+
+def test_risk_inputs_reduce_npv_monotonically():
+    base = evaluate_intervention("X", 150_000, 120).npv_10pct_usd
+    # Each risk lever should only ever lower NPV vs the unrisked base.
+    assert evaluate_intervention("X", 150_000, 120, prob_success=0.5).npv_10pct_usd < base
+    assert evaluate_intervention("X", 150_000, 120, deferred_days=10, base_rate_bopd=200).npv_10pct_usd < base
+    assert evaluate_intervention("X", 150_000, 120, water_cut_pct=80,
+                                 water_disposal_per_bbl=1.5).npv_10pct_usd < base
+
+
+def test_dyno_card_classification():
+    assert evaluate_dyno_card([{"pattern": "Incomplete fillage", "fillage_pct": 55}]).classification == "fluid_pound_pumpoff"
+    assert evaluate_dyno_card([{"pattern": "Flat card, no fluid load", "fillage_pct": 5}]).classification == "parted_rods"
+    assert evaluate_dyno_card([{"pattern": "Full card", "fillage_pct": 95}]).classification == "healthy"
+
+
+def test_esp_economic_life_old_vs_young():
+    # Old, depleted, below-POR -> beam conversion.
+    old = evaluate_esp_economic_life(current_oil_bopd=40, current_bfpd=800, por_min_bfpd=1500,
+                                     well_age_years=15, remaining_eur_bbl=90_000)
+    assert old.recommendation == "esp_to_beam_conversion"
+    # Young, healthy reserves -> right-size swap.
+    young = evaluate_esp_economic_life(current_oil_bopd=95, current_bfpd=900, por_min_bfpd=1800,
+                                       well_age_years=3, remaining_eur_bbl=340_000)
+    assert young.recommendation == "esp_swap"
+
+
+def test_type_curve_healthy_well_reads_on_curve():
+    """Regression guard: a clean hyperbolic decline (no degradation) must read ~0%
+    deviation. A fixed early-window fit used to swing healthy wells tens of percent
+    off and trigger phantom stim recommendations — the degraded-tail-trimming method
+    fixes that."""
+    from src.analyzers.decline_curve import analyze_type_curve
+    days = np.array([30, 60, 90, 120, 180, 240, 300, 365, 450, 540, 630, 720, 810, 900, 990], float)
+    rng = np.random.default_rng(0)
+    qi, di, b = 1150.0, 0.0032, 0.92
+    clean = qi / (1 + b * di * days) ** (1 / b) * (1 + rng.normal(0, 0.05, len(days)))
+    assert abs(analyze_type_curve(days, clean).deviation_pct) < 12
+
+    # And a genuinely degraded tail must still read clearly below curve.
+    degraded = clean.copy()
+    degraded[-3:] *= 0.6
+    assert analyze_type_curve(days, degraded).deviation_pct < -10
+
+
+def test_water_gas_trends_detect_gassing_up():
+    hist = [{"day": d, "oil_bopd": 100 - d * 0.02, "water_bwpd": 50,
+             "gas_mcfd": 150 + d * 0.5} for d in range(30, 1000, 60)]
+    t = analyze_water_gas_trends(hist)
+    assert t.gor_trend == "rising"
+
+
+def test_eval_well_notes_do_not_leak_the_answer():
+    """The de-leak invariant: a well file's notes must NOT contain the diagnosis or the
+    recommended intervention — the agent has to reason from tool signals, not parrot."""
+    banned = ["suspect", "downthrust", "scale signature", "gas interference", "liquid loading",
+              "p&a candidate", "paraffin", "pump-off", "parted rod", "end of esp", "uneconomic",
+              "diagnos", "recommend", "stimulation", " acid", "intervention", "economic life"]
+    wells = glob.glob("data/synthetic/**/*.json", recursive=True)
+    assert wells, "no synthetic wells found"
+    for fp in wells:
+        notes = " ".join(json.load(open(fp)).get("notes", [])).lower()
+        leaks = [b for b in banned if b in notes]
+        assert not leaks, f"{fp} leaks {leaks} in notes: {notes!r}"
 
 
 def test_monte_carlo_percentile_ordering_and_centering():

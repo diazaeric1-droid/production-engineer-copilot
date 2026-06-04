@@ -1,10 +1,10 @@
 {
   "well_id": "ED-001H",
-  "api_number": "42-109-12345",
+  "api_number": "42-109-10001",
   "field": "Delaware Basin (synthetic)",
   "operator": "Synthetic Operator LLC",
-  "spud_date": "2022-03-15",
-  "first_prod_date": "2022-06-01",
+  "spud_date": "2021-12-01",
+  "first_prod_date": "2022-03-15",
   "completion": {
     "lateral_length_ft": 10500,
     "stages": 52,
@@ -14,7 +14,7 @@
   },
   "artificial_lift": {
     "type": "ESP",
-    "installed_date": "2023-11-01",
+    "installed_date": "2023-08-01",
     "pump_spec": {
       "model": "REDA 538-D2700N",
       "stages": 180,
@@ -25,33 +25,119 @@
     }
   },
   "production_history": [
-    {"day": 30, "oil_bopd": 1180, "water_bwpd": 920, "gas_mcfd": 2100},
-    {"day": 60, "oil_bopd": 920, "water_bwpd": 1100, "gas_mcfd": 1850},
-    {"day": 90, "oil_bopd": 760, "water_bwpd": 1300, "gas_mcfd": 1600},
-    {"day": 120, "oil_bopd": 640, "water_bwpd": 1450, "gas_mcfd": 1420},
-    {"day": 180, "oil_bopd": 510, "water_bwpd": 1650, "gas_mcfd": 1180},
-    {"day": 240, "oil_bopd": 430, "water_bwpd": 1780, "gas_mcfd": 1020},
-    {"day": 300, "oil_bopd": 380, "water_bwpd": 1850, "gas_mcfd": 920},
-    {"day": 365, "oil_bopd": 340, "water_bwpd": 1900, "gas_mcfd": 840},
-    {"day": 450, "oil_bopd": 280, "water_bwpd": 1920, "gas_mcfd": 720},
-    {"day": 540, "oil_bopd": 240, "water_bwpd": 1900, "gas_mcfd": 640},
-    {"day": 630, "oil_bopd": 200, "water_bwpd": 1850, "gas_mcfd": 560},
-    {"day": 720, "oil_bopd": 165, "water_bwpd": 1780, "gas_mcfd": 490},
-    {"day": 810, "oil_bopd": 138, "water_bwpd": 1700, "gas_mcfd": 430},
-    {"day": 900, "oil_bopd": 105, "water_bwpd": 1620, "gas_mcfd": 380},
-    {"day": 990, "oil_bopd": 82, "water_bwpd": 1550, "gas_mcfd": 320}
+    {
+      "day": 30,
+      "oil_bopd": 1071.0,
+      "water_bwpd": 556.9,
+      "gas_mcfd": 1911.7
+    },
+    {
+      "day": 60,
+      "oil_bopd": 1057.0,
+      "water_bwpd": 570.8,
+      "gas_mcfd": 1871.0
+    },
+    {
+      "day": 90,
+      "oil_bopd": 970.5,
+      "water_bwpd": 543.5,
+      "gas_mcfd": 1703.2
+    },
+    {
+      "day": 120,
+      "oil_bopd": 766.7,
+      "water_bwpd": 444.7,
+      "gas_mcfd": 1334.0
+    },
+    {
+      "day": 180,
+      "oil_bopd": 679.5,
+      "water_bwpd": 421.3,
+      "gas_mcfd": 1161.9
+    },
+    {
+      "day": 240,
+      "oil_bopd": 637.9,
+      "water_bwpd": 421.0,
+      "gas_mcfd": 1071.6
+    },
+    {
+      "day": 300,
+      "oil_bopd": 552.3,
+      "water_bwpd": 386.6,
+      "gas_mcfd": 911.2
+    },
+    {
+      "day": 365,
+      "oil_bopd": 498.0,
+      "water_bwpd": 370.2,
+      "gas_mcfd": 805.6
+    },
+    {
+      "day": 450,
+      "oil_bopd": 415.7,
+      "water_bwpd": 332.5,
+      "gas_mcfd": 654.7
+    },
+    {
+      "day": 540,
+      "oil_bopd": 398.2,
+      "water_bwpd": 342.5,
+      "gas_mcfd": 609.3
+    },
+    {
+      "day": 630,
+      "oil_bopd": 352.9,
+      "water_bwpd": 324.6,
+      "gas_mcfd": 524.0
+    },
+    {
+      "day": 720,
+      "oil_bopd": 306.8,
+      "water_bwpd": 300.7,
+      "gas_mcfd": 441.8
+    },
+    {
+      "day": 810,
+      "oil_bopd": 212.6,
+      "water_bwpd": 305.2,
+      "gas_mcfd": 409.4
+    },
+    {
+      "day": 900,
+      "oil_bopd": 188.6,
+      "water_bwpd": 286.3,
+      "gas_mcfd": 351.4
+    },
+    {
+      "day": 990,
+      "oil_bopd": 162.5,
+      "water_bwpd": 260.2,
+      "gas_mcfd": 292.7
+    }
   ],
   "esp_readings": [
-    {"date": "2026-05-21", "bfpd": 1720, "intake_pressure_psi": 38, "motor_temp_f": 295, "motor_amps": 76},
-    {"date": "2026-05-22", "bfpd": 1680, "intake_pressure_psi": 41, "motor_temp_f": 298, "motor_amps": 78},
-    {"date": "2026-05-23", "bfpd": 1655, "intake_pressure_psi": 35, "motor_temp_f": 302, "motor_amps": 79},
-    {"date": "2026-05-24", "bfpd": 1640, "intake_pressure_psi": 33, "motor_temp_f": 305, "motor_amps": 81},
-    {"date": "2026-05-25", "bfpd": 1622, "intake_pressure_psi": 31, "motor_temp_f": 308, "motor_amps": 82}
+    {
+      "date": "2026-05-21",
+      "bfpd": 1656,
+      "intake_pressure_psi": 41,
+      "motor_temp_f": 303,
+      "motor_amps": 78,
+      "frequency_hz": 60
+    },
+    {
+      "date": "2026-05-25",
+      "bfpd": 1676,
+      "intake_pressure_psi": 33,
+      "motor_temp_f": 308,
+      "motor_amps": 81,
+      "frequency_hz": 60
+    }
   ],
   "scada_recent": [],
   "dyno_cards": [],
   "notes": [
-    "Field-wide scale issue reported in adjacent wells last quarter.",
-    "Last chemical treatment (scale inhibitor): 2026-02-15."
+    "Intake pressure stepping down while amps step up on the trend sheet.",
+    "Three months since the last chemical treatment on this well."
   ]
 }

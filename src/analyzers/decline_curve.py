@@ -134,14 +134,22 @@ def analyze_type_curve(
     price_per_bbl: float = 65.0,
     opex_per_bbl: float = 12.0,
 ) -> TypeCurveResult:
-    """Fit a type curve on the EARLY/established portion of the well's history and
-    extrapolate it forward, then measure how far actual production has fallen below
-    that curve (rate deviation today + cumulative deferred production).
+    """Build a type curve from the well's ESTABLISHED decline and measure how far
+    actual production has fallen below it (rate deviation today + cumulative deferred).
 
-    Fitting only early data is the key difference from fit_decline(): a curve fit
-    over the whole history is dragged down by the degraded tail, so a rolling-over
-    well looks 'on type curve'. Here the type curve reflects what the well *should*
-    be doing.
+    Method — iterative degraded-tail trimming (robust to noise):
+      1. Fit the full history.
+      2. If the last kept point sits materially below its own fit, the well has departed
+         from its established decline there — peel that point off and refit. Repeat.
+      3. The remaining (clean) early window is the type curve; extrapolate it forward.
+
+    This fixes the failure mode of a fixed early-window fit: extrapolating an Arps fit
+    from a handful of noisy early points over hundreds of days is wildly unstable (a
+    HEALTHY well can read tens of percent above or below "type curve" purely from fit
+    noise). Trimming only a genuinely degraded tail means a healthy, on-curve well keeps
+    all its points → type curve == full fit → deviation ≈ 0, while a rolled-over well
+    still exposes its real deferred production. `established_frac` is retained only as the
+    floor on how much history the clean window must keep.
     """
     days = np.asarray(days, dtype=float)
     rates = np.asarray(rates, dtype=float)
@@ -150,10 +158,25 @@ def analyze_type_curve(
     if len(days) < 6:
         raise ValueError("Need at least 6 valid production points for type-curve analysis.")
 
-    n_est = max(5, int(round(len(days) * established_frac)))
-    n_est = min(n_est, len(days) - 1)  # always hold out at least one point to evaluate
-    fit = fit_decline(days[:n_est], rates[:n_est], model=model)
+    # A point is "below its established decline" if it falls >12% under the trend of the
+    # points BEFORE it — safely outside typical multiplicative noise (~5%), so healthy wells
+    # don't trim. Testing each tail point against a fit that EXCLUDES it (leave-one-out) is
+    # the key: a fit that includes the point would just bend down to absorb the degradation
+    # (b collapses to chase the tail) and never flag the break.
+    below_tol = 0.88
+    min_keep = max(6, int(round(len(days) * established_frac)))
 
+    keep = len(days)
+    while keep > min_keep:
+        fit_excl = fit_decline(days[: keep - 1], rates[: keep - 1], model=model)
+        pred_last = float(_curve(model, fit_excl.qi, fit_excl.di, fit_excl.b, days[keep - 1: keep])[0])
+        if pred_last > 0 and rates[keep - 1] < below_tol * pred_last:
+            keep -= 1   # this tail point has departed from the established trend; drop it
+        else:
+            break
+
+    fit = fit_decline(days[:keep], rates[:keep], model=model)
+    n_est = keep
     tc = _curve(model, fit.qi, fit.di, fit.b, days)
     tc_last = float(tc[-1])
     deviation = (rates[-1] - tc_last) / tc_last * 100 if tc_last > 0 else 0.0
@@ -192,3 +215,75 @@ def project_eur(fit: DeclineFit, economic_limit_bopd: float = 5.0, horizon_days:
         q = _hyperbolic(t, fit.qi, fit.di, fit.b)
     above_limit = q[q >= economic_limit_bopd]
     return float(above_limit.sum())
+
+
+@dataclass
+class WaterGasTrend:
+    """Water-cut and GOR levels + trends over the production history.
+
+    Many interventions are driven by the water and gas streams, not the oil rate:
+    a rising water cut shifts the economic limit and the right-size lift target; a
+    rising GOR flags gas interference / liquid-loading risk on artificial lift.
+    """
+    latest_water_cut_pct: float
+    water_cut_slope_pct_per_yr: float     # +ve = watering out
+    latest_gor_scf_per_bbl: float
+    gor_slope_scf_per_bbl_per_yr: float   # +ve = gassing up
+    water_cut_trend: str                  # "rising" | "flat" | "falling"
+    gor_trend: str
+    flags: list[str]
+
+
+def _slope_per_year(days: np.ndarray, values: np.ndarray) -> float:
+    """Least-squares slope of values vs time, returned per *year* (days are in days)."""
+    if len(days) < 2:
+        return 0.0
+    m = np.isfinite(values)
+    if m.sum() < 2:
+        return 0.0
+    slope_per_day = float(np.polyfit(days[m], values[m], 1)[0])
+    return slope_per_day * 365.0
+
+
+def analyze_water_gas_trends(history: list[dict]) -> WaterGasTrend:
+    """Compute water-cut and GOR levels and trends from a production history.
+
+    Each row needs oil_bopd, water_bwpd, gas_mcfd. Water cut = water/(oil+water);
+    GOR = gas (scf) / oil (bbl) with gas in mcf -> *1000.
+    """
+    days = np.array([r.get("day", 0) for r in history], dtype=float)
+    oil = np.array([r.get("oil_bopd", 0.0) for r in history], dtype=float)
+    water = np.array([r.get("water_bwpd", 0.0) for r in history], dtype=float)
+    gas = np.array([r.get("gas_mcfd", 0.0) for r in history], dtype=float)
+
+    liquid = oil + water
+    wc = np.where(liquid > 0, water / liquid * 100.0, 0.0)
+    gor = np.where(oil > 0, gas * 1000.0 / oil, 0.0)
+
+    wc_slope = _slope_per_year(days, wc)
+    gor_slope = _slope_per_year(days, gor)
+
+    def _trend(slope: float, eps: float) -> str:
+        return "rising" if slope > eps else "falling" if slope < -eps else "flat"
+
+    flags: list[str] = []
+    latest_wc = float(wc[-1]) if len(wc) else 0.0
+    latest_gor = float(gor[-1]) if len(gor) else 0.0
+    if latest_wc > 90:
+        flags.append(f"HIGH WATER CUT ({latest_wc:.0f}%) — near economic limit, SWD-cost sensitive")
+    # 8%/yr threshold: a few %/yr of water-cut creep is normal maturation, not a problem
+    # signal. Only flag a genuinely steep climb so healthy wells stay clean.
+    if wc_slope > 8:
+        flags.append(f"WATER CUT RISING (+{wc_slope:.1f}%/yr) — re-check economic limit & lift sizing")
+    if gor_slope > 200:
+        flags.append(f"GOR RISING (+{gor_slope:.0f} scf/bbl/yr) — gas-interference / loading risk")
+
+    return WaterGasTrend(
+        latest_water_cut_pct=latest_wc,
+        water_cut_slope_pct_per_yr=wc_slope,
+        latest_gor_scf_per_bbl=latest_gor,
+        gor_slope_scf_per_bbl_per_yr=gor_slope,
+        water_cut_trend=_trend(wc_slope, 1.0),
+        gor_trend=_trend(gor_slope, 50.0),
+        flags=flags,
+    )

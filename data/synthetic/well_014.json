@@ -1,129 +1,142 @@
 {
   "well_id": "ED-014H",
   "api_number": "42-109-10014",
-  "field": "Permian conventional (synthetic)",
+  "field": "Delaware Basin (synthetic)",
   "operator": "Synthetic Operator LLC",
-  "spud_date": "2015-03-01",
-  "first_prod_date": "2015-06-01",
+  "spud_date": "2023-02-10",
+  "first_prod_date": "2023-05-01",
   "completion": {
-    "lateral_length_ft": 0,
-    "stages": 0,
-    "proppant_lb_per_ft": 0,
-    "fluid_bbl_per_ft": 0,
-    "formation": "San Andres"
+    "lateral_length_ft": 10500,
+    "stages": 52,
+    "proppant_lb_per_ft": 2400,
+    "fluid_bbl_per_ft": 55,
+    "formation": "Wolfcamp A"
   },
   "artificial_lift": {
-    "type": "Beam Pump",
-    "installed_date": "2019-04-10",
+    "type": "ESP",
+    "installed_date": "2024-08-01",
     "pump_spec": {
-      "model": "C-228D-200-74",
-      "stroke_in": 74,
-      "spm": 6.5,
-      "plunger_in": 1.75
+      "model": "REDA 538-D2700N",
+      "stages": 180,
+      "por_min_bfpd": 1800,
+      "por_max_bfpd": 3400,
+      "motor_temp_max_f": 350,
+      "motor_amps_nameplate": 65
     }
   },
   "production_history": [
     {
       "day": 30,
-      "oil_bopd": 121.8,
-      "water_bwpd": 63.3,
-      "gas_mcfd": 217.4
+      "oil_bopd": 1019.7,
+      "water_bwpd": 530.2,
+      "gas_mcfd": 1820.2
     },
     {
       "day": 60,
-      "oil_bopd": 123.4,
-      "water_bwpd": 66.6,
-      "gas_mcfd": 218.4
+      "oil_bopd": 949.5,
+      "water_bwpd": 512.7,
+      "gas_mcfd": 1680.6
     },
     {
       "day": 90,
-      "oil_bopd": 118.3,
-      "water_bwpd": 66.2,
-      "gas_mcfd": 207.6
+      "oil_bopd": 834.0,
+      "water_bwpd": 467.1,
+      "gas_mcfd": 1463.7
     },
     {
       "day": 120,
-      "oil_bopd": 112.4,
-      "water_bwpd": 65.2,
-      "gas_mcfd": 195.5
+      "oil_bopd": 804.4,
+      "water_bwpd": 466.6,
+      "gas_mcfd": 1399.7
     },
     {
       "day": 180,
-      "oil_bopd": 98.5,
-      "water_bwpd": 61.0,
-      "gas_mcfd": 168.4
+      "oil_bopd": 762.5,
+      "water_bwpd": 472.8,
+      "gas_mcfd": 1303.9
     },
     {
       "day": 240,
-      "oil_bopd": 101.5,
-      "water_bwpd": 67.0,
-      "gas_mcfd": 170.5
+      "oil_bopd": 654.3,
+      "water_bwpd": 431.8,
+      "gas_mcfd": 1099.3
     },
     {
       "day": 300,
-      "oil_bopd": 85.1,
-      "water_bwpd": 59.6,
-      "gas_mcfd": 140.5
+      "oil_bopd": 620.7,
+      "water_bwpd": 434.5,
+      "gas_mcfd": 1024.2
     },
     {
       "day": 365,
-      "oil_bopd": 84.2,
-      "water_bwpd": 62.6,
-      "gas_mcfd": 136.2
+      "oil_bopd": 544.5,
+      "water_bwpd": 404.7,
+      "gas_mcfd": 880.7
     },
     {
       "day": 450,
-      "oil_bopd": 76.9,
-      "water_bwpd": 61.5,
-      "gas_mcfd": 121.1
+      "oil_bopd": 464.3,
+      "water_bwpd": 371.4,
+      "gas_mcfd": 731.3
     },
     {
       "day": 540,
-      "oil_bopd": 74.9,
-      "water_bwpd": 64.4,
-      "gas_mcfd": 114.6
+      "oil_bopd": 439.3,
+      "water_bwpd": 377.8,
+      "gas_mcfd": 672.1
     },
     {
       "day": 630,
-      "oil_bopd": 82.2,
-      "water_bwpd": 75.7,
-      "gas_mcfd": 122.1
+      "oil_bopd": 371.4,
+      "water_bwpd": 341.7,
+      "gas_mcfd": 551.6
     },
     {
       "day": 720,
-      "oil_bopd": 55.2,
-      "water_bwpd": 54.1,
-      "gas_mcfd": 79.5
+      "oil_bopd": 343.7,
+      "water_bwpd": 336.8,
+      "gas_mcfd": 494.9
     },
     {
       "day": 810,
-      "oil_bopd": 64.1,
-      "water_bwpd": 66.7,
-      "gas_mcfd": 89.5
+      "oil_bopd": 297.6,
+      "water_bwpd": 309.5,
+      "gas_mcfd": 415.1
     },
     {
       "day": 900,
-      "oil_bopd": 49.7,
-      "water_bwpd": 54.7,
-      "gas_mcfd": 67.1
+      "oil_bopd": 279.2,
+      "water_bwpd": 307.1,
+      "gas_mcfd": 376.9
     },
     {
       "day": 990,
-      "oil_bopd": 51.7,
-      "water_bwpd": 59.9,
-      "gas_mcfd": 67.4
+      "oil_bopd": 248.9,
+      "water_bwpd": 288.7,
+      "gas_mcfd": 324.8
     }
   ],
-  "esp_readings": [],
-  "scada_recent": [],
-  "dyno_cards": [
+  "esp_readings": [
+    {
+      "date": "2026-05-21",
+      "bfpd": 2423,
+      "intake_pressure_psi": 124,
+      "motor_temp_f": 288,
+      "motor_amps": 63,
+      "frequency_hz": 58
+    },
     {
       "date": "2026-05-25",
-      "pattern": "Fluid pound \u2014 incomplete pump fillage, sharp downstroke drop.",
-      "fillage_pct": 55
+      "bfpd": 2343,
+      "intake_pressure_psi": 131,
+      "motor_temp_f": 285,
+      "motor_amps": 63,
+      "frequency_hz": 58
     }
   ],
+  "scada_recent": [],
+  "dyno_cards": [],
   "notes": [
-    "Cycles trending up. Operator suspects pump-off. Last dyno: severe fluid pound."
+    "Routine quarterly surveillance pull. No operator complaints logged."
   ]
 }

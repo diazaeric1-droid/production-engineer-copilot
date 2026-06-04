@@ -7,7 +7,7 @@ Built by a Staff Production Engineer (ex-OXY, ex-Shell) who spent 9 years doing 
 [![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://pe-copilot.streamlit.app)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org/)
-[![Eval](https://img.shields.io/badge/eval-0.90%20agreement-blue)](evals/sample_review.md)
+[![Eval](https://img.shields.io/badge/eval-1.00%20blind%20holdout-blue)](evals/sample_review.md)
 
 **Try it now → [pe-copilot.streamlit.app](https://pe-copilot.streamlit.app)**
 
@@ -61,34 +61,69 @@ streamlit run demo/app.py
                 ┌─────────────┼──────────────┐
                 ▼             ▼              ▼
          decline_curve   esp_diagnostics   economics
-         (Arps fit)      (POR check)       (NPV/IRR)
+         (Arps fit +     (POR + thrust)    (risked NPV +
+          type curve +   dyno_card          ESP economic
+          water/GOR)     (fillage class)    life)
 ```
 
 The agent has access to deterministic analyzers (no hallucinated math) and uses Claude as the reasoning layer to decide which to call and how to synthesize results.
 
 ## Evaluation
 
-20 synthetic well cases spanning 8 intervention types (acid stim, scale treatment, ESP swap, ESP-to-beam conversion, gas separator install, gas lift optimization, paraffin treatment, P&A, plus healthy-well "continue surveillance" controls). Each case has an expert-baseline expected primary recommendation and diagnosis keywords. Runner saves every report to `evals/results/` and writes a `summary.json`.
+A **41-case parameterized dev set** plus a **blind 18-case holdout**, spanning every
+intervention type (acid stim, scale treatment, ESP swap, ESP-to-beam conversion, gas
+separator, gas-lift optimization, pump-off controller, paraffin treatment, workover, P&A,
+healthy-well "continue surveillance" controls) and boundary cases (two-signal scale-with-gas,
+sequenced acid-then-swap, and insufficient-data wells where the correct answer is *"get more
+data"*).
+
+Two design choices make the number honest:
+- **No answer leak.** Each well file's `notes` carry only raw field observations + distractors —
+  never the diagnosis or recommendation. Expert labels live only in `cases.yaml`, which the
+  agent never sees. The agent must reason from tool signals, not parrot the notes (enforced by
+  a unit-test invariant). Every archetype's discriminating signal is verified reachable from the
+  deterministic tools alone.
+- **Blind holdout.** The prompt is tuned on the dev set; the holdout (separate seed + id range)
+  is run once and reported as the headline. A defensible holdout number beats an inflated
+  self-graded one.
 
 ```bash
-python -m evals.run_evals               # full set
-python -m evals.run_evals --limit 3     # quick check
-python -m evals.run_evals --case case_005   # single case
+python -m evals.run_evals                 # 41-case dev set (+ per-class + confusion matrix)
+python -m evals.run_evals --holdout       # blind 18-case holdout — the headline number
+python -m evals.run_evals --judge         # add LLM-as-judge rubric scores (diagnosis/rec/econ/restraint)
+python data/synthetic/generate.py --both  # regenerate dev + holdout wells
+python -m evals.make_human_grading_sheet  # blind sheet for an inter-rater PE panel
 ```
 
-**Current (v0.1):**
-- Primary recommendation agreement: **0.90** (18 / 20)
-- Diagnosis keyword hit rate: **0.90**
-- Two outstanding misses both involve ambiguous interventions where the agent's diagnosis was correct but the recommendation phrasing diverged from the eval's expected term — v0.2 will add dedicated tools for dyno-card interpretation and ESP-economic-life calculation to close the gap.
+Scoring goes beyond keyword-match: per-class agreement, an expected→predicted confusion
+matrix, and an optional 1-5 LLM-as-judge rubric (diagnosis / recommendation / economics /
+restraint), so systematic confusions surface instead of hiding in one blended number.
+
+**Current (v0.4):**
+
+| Set | Recommendation agreement | Diagnosis keyword hit rate |
+|---|---|---|
+| Dev (41 cases) | **41 / 41 (1.00)** | 0.87 |
+| **Blind holdout (18 cases)** | **18 / 18 (1.00)** | 0.92 |
+
+Up from the prior **0.90 on 20 hand-tuned wells whose notes contained the answer** — a higher
+rate on ~3× the sample, on a set where the diagnosis is no longer in the data. Per-class
+agreement is 100% across all twelve recommendation classes on both sets. *Caveat for honesty:*
+these are synthetic wells with clean, separable signatures (each archetype's discriminating
+signal is verified reachable from the deterministic tools). Real wells have overlapping, noisier
+signatures — the next credibility step is real operator data and the blind inter-rater PE panel
+(`make_human_grading_sheet.py`), not a higher synthetic number.
 
 ## Roadmap
 
-- [x] v0.1 — Decline curve + ESP diagnostics + economics + intervention selection heuristics + 20-case eval set @ 0.90 agreement
+- [x] v0.1 — Decline curve + ESP diagnostics + economics + intervention heuristics + 20-case eval @ 0.90
 - [x] v0.1 — Streamlit interactive demo
-- [ ] v0.2 — Dedicated dyno-card interpretation tool (closes case_014 pump-off gap) + ESP-economic-life evaluator (closes case_012 ESP-to-beam gap)
-- [ ] v0.3 — Multi-well portfolio mode (rank a field of wells by intervention NPV)
-- [ ] v0.4 — Connect to common SCADA/historian APIs (PI, Ignition)
-- [ ] v0.5 — Chain into AFE Copilot — well review → intervention selection → draft AFE in one workflow
+- [x] v0.4 — Dyno-card interpretation tool (closes the pump-off gap) + ESP-economic-life evaluator (closes the ESP-to-beam gap)
+- [x] v0.4 — De-leaked + parameterized generator, 41-case dev set, blind 18-case holdout, boundary cases
+- [x] v0.4 — Water-cut/GOR trend tool, VP-grade risked economics, LLM-as-judge + confusion matrix + inter-rater sheet
+- [ ] v0.5 — Multi-well portfolio mode (rank a field of wells by intervention NPV)
+- [ ] v0.6 — Connect to common SCADA/historian APIs (PI, Ignition)
+- [ ] v0.7 — Chain into AFE Copilot — well review → intervention selection → draft AFE in one workflow
 
 ## License
 

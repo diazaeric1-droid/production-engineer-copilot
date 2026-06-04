@@ -10,4 +10,9 @@ build/
 *.egg-info/
 .streamlit/secrets.toml
 evals/results/
+# ...but DO track the scored summaries — the CI regression gate (check_gate.py) reads
+# summary.json, so it must be committed or CI fails on a fresh checkout.
+!evals/results/summary.json
+!evals/results/holdout/
+!evals/results/holdout/summary_holdout.json
 .DS_Store

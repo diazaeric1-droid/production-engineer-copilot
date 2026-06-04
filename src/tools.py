@@ -11,9 +11,14 @@ from typing import Any
 
 import numpy as np
 
-from .analyzers.decline_curve import fit_decline, project_eur, analyze_type_curve
-from .analyzers.economics import evaluate_intervention, simulate_intervention
+from .analyzers.decline_curve import (
+    fit_decline, project_eur, analyze_type_curve, analyze_water_gas_trends,
+)
+from .analyzers.economics import (
+    evaluate_intervention, simulate_intervention, evaluate_esp_economic_life,
+)
 from .analyzers.esp_diagnostics import evaluate_esp
+from .analyzers.dyno_card import evaluate_dyno_card
 from .data_loader import WellFile
 
 
@@ -52,10 +57,13 @@ TOOL_SCHEMAS = [
     {
         "name": "evaluate_intervention",
         "description": (
-            "Run economics on a proposed intervention (acid stim, ESP swap, "
+            "Run RISKED economics on a proposed intervention (acid stim, ESP swap, "
             "ESP-to-beam conversion, workover). Returns NPV @ 10%, payout in "
             "months, incremental EUR, and discounted profitability index "
-            "(PV of inflows / investment; >1.0 = value-accretive)."
+            "(PV of inflows / investment; >1.0 = value-accretive). Pass the optional "
+            "risk inputs for a VP-grade number: prob_success (chance of success), "
+            "deferred_days + base_rate_bopd (production lost while down for the job), "
+            "and water_cut_pct + water_disposal_per_bbl (SWD drag on net margin)."
         ),
         "input_schema": {
             "type": "object",
@@ -67,6 +75,26 @@ TOOL_SCHEMAS = [
                     "description": "Expected initial uplift in oil rate (bbl/d)",
                 },
                 "uplift_decline_per_yr": {"type": "number", "default": 0.6},
+                "prob_success": {
+                    "type": "number",
+                    "description": "Chance of success 0-1 (e.g. 0.75 for a stim). Default 1.0.",
+                },
+                "deferred_days": {
+                    "type": "number",
+                    "description": "Days the well is down for the job (deferred production).",
+                },
+                "base_rate_bopd": {
+                    "type": "number",
+                    "description": "Current oil rate, used to value deferred production.",
+                },
+                "water_cut_pct": {
+                    "type": "number",
+                    "description": "Current water cut %, drives SWD drag on the uplift barrels.",
+                },
+                "water_disposal_per_bbl": {
+                    "type": "number",
+                    "description": "Water disposal cost $/bbl (Permian SWD ~$0.5-1.5).",
+                },
             },
             "required": ["name", "treatment_cost_usd", "incremental_rate_bopd"],
         },
@@ -109,6 +137,56 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "name": "interpret_dyno_card",
+        "description": (
+            "Interpret the most recent dynamometer card for a rod-lifted (beam pump) "
+            "well. Classifies the card into an actionable failure mode — fluid pound / "
+            "pump-off, parted rods (flat card), gas interference, or healthy full "
+            "fillage — and returns the implied severity and recommended intervention. "
+            "This is the PRIMARY downhole diagnostic for beam pumps; the decline curve "
+            "alone cannot see a pump-off or a parted rod. ALWAYS call this for a beam "
+            "pump well that has dyno_cards."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "analyze_water_gas_trends",
+        "description": (
+            "Compute water-cut and gas-oil-ratio (GOR) levels and trends over the "
+            "production history. Surfaces watering-out (economic-limit / lift-sizing "
+            "impact) and gassing-up (gas-interference / liquid-loading risk) that the "
+            "oil-rate decline curve hides. Call this on every well — many interventions "
+            "are driven by the water or gas stream, not the oil rate."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "evaluate_esp_economic_life",
+        "description": (
+            "For an ESP well producing BELOW its POR floor, decide ESP-swap vs "
+            "ESP-to-beam conversion on LIFECYCLE economics (not a single-job NPV). "
+            "Compares lifting the remaining reserves under each option net of the "
+            "expected lift-failure cadence — an ESP re-fails every ~2-3 yr at ~$325K/pull, "
+            "a beam unit runs 5-8 yr on cheap rod jobs. Use this whenever the well is "
+            "below POR and you are weighing a right-size swap against a beam conversion. "
+            "Call fit_decline_curve and project_recovery first to get remaining EUR."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "remaining_eur_bbl": {
+                    "type": "number",
+                    "description": "Remaining recoverable oil (bbl), from project_recovery",
+                },
+                "well_age_years": {
+                    "type": "number",
+                    "description": "Years since first production",
+                },
+            },
+            "required": ["remaining_eur_bbl", "well_age_years"],
+        },
+    },
 ]
 
 
@@ -148,6 +226,11 @@ _AFE_PHRASE_MAP = [
     ("rod string", "rod_pump_workover"),
     ("workover", "rod_pump_workover"),
     ("rod replacement", "rod_pump_workover"),
+    # A pump-off controller / POC is a rod-system optimization; the AFE cost bucket
+    # closest to it in the contract is the rod-pump workover template.
+    ("pump-off controller", "rod_pump_workover"),
+    ("pump off controller", "rod_pump_workover"),
+    ("poc", "rod_pump_workover"),
     ("plug and abandon", "p_and_a"),
     ("p&a", "p_and_a"),
     ("abandon", "p_and_a"),
@@ -284,6 +367,66 @@ class ToolExecutor:
             "motor_amps": diag.motor_amps,
             "flags": diag.flags,
             "likely_issues": diag.likely_issues,
+            "frequency_hz": diag.frequency_hz,
+            "discharge_pressure_psi": diag.discharge_pressure_psi,
+            "thrust": diag.thrust,
+        }
+
+    def _tool_interpret_dyno_card(self) -> dict:
+        lift = self.well.artificial_lift.get("type", "")
+        if not self.well.dyno_cards:
+            return {"applicable": False,
+                    "reason": "No dyno cards in data package (request a recent card)."}
+        diag = evaluate_dyno_card(self.well.dyno_cards, lift_type=lift)
+        return {
+            "applicable": True,
+            "classification": diag.classification,
+            "fillage_pct": diag.fillage_pct,
+            "severity": diag.severity,
+            "flags": diag.flags,
+            "likely_issues": diag.likely_issues,
+            "recommended_intervention": diag.recommended_intervention,
+        }
+
+    def _tool_analyze_water_gas_trends(self) -> dict:
+        if not self.well.production_history:
+            return {"error": "No production history."}
+        t = analyze_water_gas_trends(self.well.production_history)
+        return {
+            "latest_water_cut_pct": round(t.latest_water_cut_pct, 1),
+            "water_cut_slope_pct_per_yr": round(t.water_cut_slope_pct_per_yr, 2),
+            "water_cut_trend": t.water_cut_trend,
+            "latest_gor_scf_per_bbl": round(t.latest_gor_scf_per_bbl, 0),
+            "gor_slope_scf_per_bbl_per_yr": round(t.gor_slope_scf_per_bbl_per_yr, 0),
+            "gor_trend": t.gor_trend,
+            "flags": t.flags,
+        }
+
+    def _tool_evaluate_esp_economic_life(self, remaining_eur_bbl: float,
+                                         well_age_years: float) -> dict:
+        if self.well.artificial_lift.get("type") != "ESP":
+            return {"applicable": False, "reason": "Well is not on ESP"}
+        if not self.well.esp_readings:
+            return {"error": "No ESP readings to read current rate from."}
+        spec = self.well.artificial_lift["pump_spec"]
+        latest = self.well.esp_readings[-1]
+        current_bfpd = latest.get("bfpd", 0.0)
+        current_oil = self._last_fit.last_actual if self._last_fit else current_bfpd
+        verdict = evaluate_esp_economic_life(
+            current_oil_bopd=current_oil,
+            current_bfpd=current_bfpd,
+            por_min_bfpd=spec.get("por_min_bfpd", 0.0),
+            well_age_years=well_age_years,
+            remaining_eur_bbl=remaining_eur_bbl,
+        )
+        return {
+            "applicable": True,
+            "recommendation": verdict.recommendation,
+            "swap_lifecycle_npv_usd": round(verdict.swap_npv_usd, 0),
+            "beam_lifecycle_npv_usd": round(verdict.beam_npv_usd, 0),
+            "remaining_eur_bbl": round(verdict.remaining_eur_bbl, 0),
+            "years_to_deplete": round(verdict.years_to_deplete, 1),
+            "rationale": verdict.rationale,
         }
 
     def _tool_evaluate_intervention(self, **kwargs) -> dict:

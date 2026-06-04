@@ -15,6 +15,9 @@ class ESPDiagnostic:
     motor_amps: float
     flags: list[str]
     likely_issues: list[str]
+    frequency_hz: float | None = None
+    discharge_pressure_psi: float | None = None
+    thrust: str | None = None              # "downthrust" | "upthrust" | "neutral"
 
 
 def evaluate_esp(esp_readings: list[dict], pump_spec: dict) -> ESPDiagnostic:
@@ -22,6 +25,7 @@ def evaluate_esp(esp_readings: list[dict], pump_spec: dict) -> ESPDiagnostic:
 
     pump_spec keys: model, stages, por_min_bfpd, por_max_bfpd,
                    motor_temp_max_f, motor_amps_nameplate
+    Optional reading keys (used when present): frequency_hz, discharge_pressure_psi.
     """
     if not esp_readings:
         raise ValueError("No ESP readings provided.")
@@ -31,6 +35,8 @@ def evaluate_esp(esp_readings: list[dict], pump_spec: dict) -> ESPDiagnostic:
     intake_p = latest.get("intake_pressure_psi", 0)
     motor_t = latest.get("motor_temp_f", 0)
     amps = latest.get("motor_amps", 0)
+    freq = latest.get("frequency_hz")
+    disch_p = latest.get("discharge_pressure_psi")
 
     por_min = pump_spec["por_min_bfpd"]
     por_max = pump_spec["por_max_bfpd"]
@@ -38,13 +44,23 @@ def evaluate_esp(esp_readings: list[dict], pump_spec: dict) -> ESPDiagnostic:
 
     flags = []
     issues = []
+    thrust = "neutral"
 
     if bfpd < por_min:
         flags.append(f"BELOW POR ({bfpd:.0f} < {por_min:.0f} bfpd)")
         issues.append("Pump downthrust risk — consider VSD reduction or smaller pump")
+        thrust = "downthrust"
     if bfpd > por_max:
         flags.append(f"ABOVE POR ({bfpd:.0f} > {por_max:.0f} bfpd)")
         issues.append("Pump upthrust risk — consider VSD boost or larger pump")
+        thrust = "upthrust"
+
+    # Optional physics: if a VSD frequency is reported, a low Hz at a below-POR rate
+    # confirms the operator has already slowed the pump to fight downthrust — there is
+    # little headroom left, which strengthens a swap/conversion call over "just slow it down".
+    if freq is not None and bfpd < por_min and freq <= 45:
+        flags.append(f"VSD ALREADY LOW ({freq:.0f} Hz) — limited headroom to slow further")
+        issues.append("Pump already turned down near min Hz; rate problem is mechanical, not a setpoint")
 
     if intake_p < 50:
         flags.append(f"LOW INTAKE PRESSURE ({intake_p:.0f} psi)")
@@ -72,4 +88,7 @@ def evaluate_esp(esp_readings: list[dict], pump_spec: dict) -> ESPDiagnostic:
         motor_amps=amps,
         flags=flags,
         likely_issues=issues,
+        frequency_hz=float(freq) if freq is not None else None,
+        discharge_pressure_psi=float(disch_p) if disch_p is not None else None,
+        thrust=thrust,
     )
