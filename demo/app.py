@@ -493,14 +493,22 @@ with tab_econ:
 
 with tab_review:
     if run:
-        with st.spinner("Agent reasoning + tool calls…"):
-            report = run_review(str(chosen), verbose=show_tools)
-        st.markdown(report)
-        st.download_button(
-            "⬇ Download review (Markdown)",
-            report,
-            file_name=f"{well.well_id}-review.md",
-        )
+        try:
+            with st.spinner("Agent reasoning + tool calls…"):
+                report = run_review(str(chosen), verbose=show_tools)
+            st.markdown(report)
+            st.download_button(
+                "⬇ Download review (Markdown)",
+                report,
+                file_name=f"{well.well_id}-review.md",
+            )
+        except RuntimeError as e:
+            if "ANTHROPIC_API_KEY" in str(e):
+                st.warning("Set `ANTHROPIC_API_KEY` (a Space/app secret) to generate the AI review. "
+                           "The deterministic analysis — decline fit, ESP diagnostics, economics, "
+                           "and the eval dashboard — works without a key.")
+            else:
+                raise
     else:
         st.info("👈 Click **Run AI well review** in the sidebar to generate the agent's full diagnosis "
                 "and ranked intervention recommendations. The charts to the left already show what the "

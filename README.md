@@ -1,3 +1,15 @@
+---
+title: Production Engineer Copilot
+emoji: 🛢️
+colorFrom: blue
+colorTo: indigo
+sdk: streamlit
+sdk_version: 1.50.0
+app_file: demo/app.py
+pinned: true
+license: mit
+---
+
 # Production Engineer Copilot
 
 > An open-source AI agent that performs a complete well review — decline analysis, artificial lift diagnostics, intervention recommendations, and economics — in 60 seconds.
