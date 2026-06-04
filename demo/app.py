@@ -16,6 +16,18 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+# --- Self-heal stale bytecode / module cache (Streamlit Cloud) --------------
+# Streamlit reuses the container across redeploys. A cached .pyc or an already-
+# imported OLD module object can lack symbols added in a newer commit, which shows
+# up as an ImportError at startup for a name that genuinely exists in the source.
+# Purge src/ bytecode and evict any cached src modules so every submodule reloads
+# from the CURRENT source on this run. (No-op on a clean container.)
+import shutil as _shutil
+for _pycache in (REPO_ROOT / "src").rglob("__pycache__"):
+    _shutil.rmtree(_pycache, ignore_errors=True)
+for _name in [m for m in sys.modules if m == "src" or m.startswith("src.")]:
+    del sys.modules[_name]
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -24,13 +36,7 @@ from plotly.subplots import make_subplots
 
 from src import __version__ as APP_VERSION
 from src.agent import run_review
-from src.analyzers.decline_curve import fit_decline
-try:
-    # Optional: newer symbol — guard so a stale-bytecode build (cached .pyc lacking
-    # this name) degrades gracefully to the plain fit instead of white-screening.
-    from src.analyzers.decline_curve import analyze_type_curve
-except ImportError:
-    analyze_type_curve = None
+from src.analyzers.decline_curve import fit_decline, analyze_type_curve
 from src.analyzers.economics import evaluate_intervention, simulate_intervention
 from src.analyzers.esp_diagnostics import evaluate_esp
 from src.data_loader import WellFile
