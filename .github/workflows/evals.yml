@@ -28,5 +28,3 @@ jobs:
 
       - name: Eval regression gate (agreement >= 0.85)
         run: python evals/check_gate.py --threshold 0.85
-</content>
-</invoke>
