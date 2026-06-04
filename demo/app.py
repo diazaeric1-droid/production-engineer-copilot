@@ -100,8 +100,13 @@ with st.sidebar:
         format_func=lambda p: p.stem.replace("_", " ").title(),
     )
     show_tools = st.checkbox("Show agent tool calls in review", value=True)
+    byok_key = st.text_input(
+        "🔑 Anthropic API key (optional)", type="password",
+        help="Bring your own key — used only for this session, never stored. Powers the AI well "
+             "review. Get one at console.anthropic.com. The charts, decline fit, ESP diagnostics, "
+             "economics, and eval dashboard all work without it.")
     run = st.button("Run AI well review", type="primary", use_container_width=True)
-    st.caption("Review takes ~30 sec and costs ~$0.05 in API.")
+    st.caption("Review takes ~30 sec and costs ~$0.05 of your own API credit.")
 
     st.divider()
     st.subheader("How it works")
@@ -495,7 +500,7 @@ with tab_review:
     if run:
         try:
             with st.spinner("Agent reasoning + tool calls…"):
-                report = run_review(str(chosen), verbose=show_tools)
+                report = run_review(str(chosen), verbose=show_tools, api_key=byok_key or None)
             st.markdown(report)
             st.download_button(
                 "⬇ Download review (Markdown)",
@@ -504,7 +509,7 @@ with tab_review:
             )
         except RuntimeError as e:
             if "ANTHROPIC_API_KEY" in str(e):
-                st.warning("Set `ANTHROPIC_API_KEY` (a Space/app secret) to generate the AI review. "
+                st.warning("Enter your **Anthropic API key** in the sidebar to generate the AI review. "
                            "The deterministic analysis — decline fit, ESP diagnostics, economics, "
                            "and the eval dashboard — works without a key.")
             else:

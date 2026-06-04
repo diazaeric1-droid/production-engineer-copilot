@@ -53,7 +53,8 @@ Be specific and quantitative. Write the way a Staff Production Engineer would wr
 
 
 def run_review(well_path, model: str = "claude-sonnet-4-6", verbose: bool = False,
-               return_stats: bool = False, temperature: float | None = None):
+               return_stats: bool = False, temperature: float | None = None,
+               api_key: str | None = None):
     """Run the agent loop on a single well. `well_path` is a JSON path OR a pre-built
     WellFile (e.g. from a real-data adapter). Returns the markdown report — or, if
     return_stats=True, a (report, stats) tuple where stats carries token usage, wall-clock
@@ -66,12 +67,13 @@ def run_review(well_path, model: str = "claude-sonnet-4-6", verbose: bool = Fals
     # key is missing or blank, let .env win.
     if not os.environ.get("ANTHROPIC_API_KEY"):
         load_dotenv(override=True)
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
+    # Explicit api_key (e.g. a bring-your-own-key from the UI) wins over the environment.
+    key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
         raise RuntimeError(
             "ANTHROPIC_API_KEY is not set. Add it to .env or export it in your shell."
         )
-    client = Anthropic(api_key=api_key)
+    client = Anthropic(api_key=key)
     console = Console()
 
     well = well_path if isinstance(well_path, WellFile) else WellFile.from_json(well_path)
