@@ -24,7 +24,13 @@ from plotly.subplots import make_subplots
 
 from src import __version__ as APP_VERSION
 from src.agent import run_review
-from src.analyzers.decline_curve import fit_decline, analyze_type_curve
+from src.analyzers.decline_curve import fit_decline
+try:
+    # Optional: newer symbol — guard so a stale-bytecode build (cached .pyc lacking
+    # this name) degrades gracefully to the plain fit instead of white-screening.
+    from src.analyzers.decline_curve import analyze_type_curve
+except ImportError:
+    analyze_type_curve = None
 from src.analyzers.economics import evaluate_intervention, simulate_intervention
 from src.analyzers.esp_diagnostics import evaluate_esp
 from src.data_loader import WellFile
@@ -106,10 +112,12 @@ hist = pd.DataFrame(well.production_history)
 fit = fit_decline(hist["day"].values, hist["oil_bopd"].values, model="hyperbolic")
 # True type curve: fit early/established decline and extrapolate (not dragged down
 # by the degraded tail like the full-history fit is).
-try:
-    tc = analyze_type_curve(hist["day"].values, hist["oil_bopd"].values, model="hyperbolic")
-except ValueError:
-    tc = None
+tc = None
+if analyze_type_curve is not None:
+    try:
+        tc = analyze_type_curve(hist["day"].values, hist["oil_bopd"].values, model="hyperbolic")
+    except Exception:
+        tc = None
 
 latest_oil = float(hist["oil_bopd"].iloc[-1])
 latest_water = float(hist["water_bwpd"].iloc[-1])
