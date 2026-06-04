@@ -7,8 +7,13 @@ from typing import Literal
 import numpy as np
 from scipy.optimize import curve_fit
 
-# np.trapz was renamed to np.trapezoid in numpy 2.0 (trapz deprecated); support both.
-_trapezoid = getattr(np, "trapezoid", getattr(np, "trapz"))
+# np.trapz was renamed to np.trapezoid in numpy 2.0 and REMOVED in newer numpy.
+# Resolve without eagerly touching np.trapz (which raises AttributeError on numpy
+# 2.3+ and would crash this module's import — and the whole Streamlit app — at load).
+try:
+    _trapezoid = np.trapezoid          # numpy >= 2.0
+except AttributeError:                 # pragma: no cover - very old numpy
+    _trapezoid = np.trapz
 
 
 DeclineModel = Literal["exponential", "harmonic", "hyperbolic"]
