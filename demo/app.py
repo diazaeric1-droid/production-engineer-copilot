@@ -163,11 +163,18 @@ st.markdown(
 
 with st.expander(f"🆕 What's new in v{APP_VERSION}"):
     st.markdown(
-        "- **True type-curve benchmark** — early-window fit + cumulative deferred bbl/$\n"
-        "- **Monte-Carlo intervention economics** — P10/P50/P90 + tornado sensitivity\n"
-        "- **Eval dashboard** — 20-case agreement, confusion breakdown, $/review + CI regression gate\n"
-        "- **Structured, validated diagnosis export** for AFE-Copilot chaining\n"
-        "- **Fixed payout off-by-one**; replaced mislabeled \"rate of return\" with discounted profitability index"
+        "- **Runs on real public data** — Volve (Equinor) + NDIC/RRC adapter "
+        "(Sm³→bbl, monthly→daily, bar→psi); reviewed the Volve ESP producer 15/9-F-12\n"
+        "- **Field / portfolio mode** — rank a whole field by risked NPV / capital efficiency "
+        "(the VP \"which wells this quarter\" view)\n"
+        "- **Cited economics** — EIA/SPE source-tagged assumptions, risked by P(success), "
+        "deferred production during the job, and SWD/water-disposal drag\n"
+        "- **Eval-credibility overhaul** — 41-case dev + 18-case **blind holdout**, de-leaked; "
+        "**1.00 agreement on the holdout**, confusion matrix + LLM-as-judge + CI gate\n"
+        "- **Robustness + model-cost frontier** — adversarial eval 5/5; Haiku matches Sonnet "
+        "at ~4× lower cost (~$0.03/review)\n"
+        "- **Bring-your-own-key** — paste your Anthropic key in the sidebar (used only this "
+        "session, never stored); all deterministic analysis works with no key"
     )
 
 # ---------- KPI metrics row --------------------------------------------------
