@@ -509,14 +509,33 @@ with tab_review:
 # ---- Evals dashboard (static files, no API) ---
 
 with tab_evals:
-    st.subheader("Eval dashboard — 20-case benchmark")
+    st.subheader("Eval dashboard — 41-case dev + blind holdout")
     st.caption(
-        "Reads the committed eval artifacts (evals/results/summary.json + case_*.md). "
-        "No API calls — this is the checked-in baseline the CI regression gate guards."
+        "Reads the committed eval artifacts (evals/results/summary.json, holdout/summary_holdout.json, "
+        "case_*.md). No API calls — this is the checked-in baseline the CI regression gate guards. "
+        "Wells are de-leaked (the answer is not in the data); the holdout is a blind set the prompt "
+        "was not tuned on."
     )
 
     EVAL_RESULTS = REPO_ROOT / "evals" / "results"
     summary_path = EVAL_RESULTS / "summary.json"
+
+    def _agreement(p):
+        if not p.exists():
+            return None
+        try:
+            rs = json.loads(p.read_text())
+        except Exception:
+            return None
+        sc = [r for r in rs if "recommendation_match" in r]
+        if not sc:
+            return None
+        hits = sum(1 for r in sc if r.get("recommendation_match"))
+        kw = [r["keyword_hit_rate"] for r in rs if "keyword_hit_rate" in r]
+        return {"hits": hits, "n": len(sc), "agree": hits / len(sc),
+                "kw": (sum(kw) / len(kw) if kw else 0.0)}
+
+    holdout = _agreement(EVAL_RESULTS / "holdout" / "summary_holdout.json")
 
     if not summary_path.exists():
         st.info(
@@ -540,14 +559,31 @@ with tab_evals:
             errors = [r for r in rows if "error" in r]
 
             e1, e2, e3, e4 = st.columns(4)
-            e1.metric("Recommendation agreement", f"{agreement*100:.0f}%", f"{rec_hits}/{n}")
-            e2.metric("Keyword hit rate", f"{kw_rate*100:.0f}%")
-            e3.metric("Cases", f"{len(rows)}")
-            # Estimated API cost per review (~$0.05) x number of cases — cost to run the set.
-            e4.metric("Est. $/eval run", f"${0.05*len(rows):,.2f}", help="~$0.05/review × cases")
+            e1.metric("Dev agreement", f"{agreement*100:.0f}%", f"{rec_hits}/{n}")
+            if holdout:
+                e2.metric("Blind holdout agreement", f"{holdout['agree']*100:.0f}%",
+                          f"{holdout['hits']}/{holdout['n']}",
+                          help="The credible number — a held-out set the prompt was not tuned on.")
+            else:
+                e2.metric("Keyword hit rate", f"{kw_rate*100:.0f}%")
+            e3.metric("Keyword hit rate", f"{kw_rate*100:.0f}%")
+            e4.metric("Cases", f"{len(rows)}" + (f" + {holdout['n']} blind" if holdout else ""))
 
             if errors:
                 st.warning(f"{len(errors)} case(s) errored during the last run.")
+
+            # Per-class agreement (where systematic confusions would hide).
+            st.markdown("##### Per-class recommendation agreement")
+            cls = {}
+            for r in scored:
+                c = cls.setdefault(r.get("expected", "—"), [0, 0])
+                c[1] += 1
+                c[0] += int(bool(r.get("recommendation_match")))
+            cls_df = pd.DataFrame(
+                [{"expected class": k, "agreement": f"{h/n2*100:.0f}%", "n": n2}
+                 for k, (h, n2) in sorted(cls.items(), key=lambda kv: kv[1][0] / kv[1][1])]
+            )
+            st.dataframe(cls_df, use_container_width=True, hide_index=True)
 
             # Per-case pass/fail table
             st.markdown("##### Per-case results")

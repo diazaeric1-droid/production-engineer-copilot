@@ -15,4 +15,6 @@ evals/results/
 !evals/results/summary.json
 !evals/results/holdout/
 !evals/results/holdout/summary_holdout.json
+!evals/results/model_frontier.json
+!evals/results/adversarial.txt
 .DS_Store

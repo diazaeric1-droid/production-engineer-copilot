@@ -4,6 +4,44 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-06-04
+
+Beyond the saturated synthetic score: prove it on real data, harden it, show PE value.
+
+### Real public data (`src/adapters/public_data.py`)
+- Adapter that ingests the **Volve** (Equinor open North Sea dataset, CC BY-NC-SA 4.0)
+  `MonthlyProductionData` schema and the generic **NDIC / Texas RRC** field-unit schema, with
+  the real-world wrangling: Sm³→bbl (×6.2898), Sm³ gas→mcf, period-volume→daily-rate ÷ on-stream
+  days, bar→psi for downhole gauges. `run_review` now accepts a pre-built `WellFile`.
+- Ran a real-format review end-to-end on Volve producer 15/9-F-12 (`evals/real_reviews/`): the
+  agent correctly flagged the subsea ESP running far below POR (4,094 vs 8,000 BFPD floor) with a
+  rising 54% water cut, on type curve, ~4.2 MMbbl remaining. `data/real/` ships a schema-faithful
+  sample + license/sourcing docs (the gated 40k-file dataset isn't redistributed).
+
+### Field / portfolio mode (`src/portfolio.py`)
+- Fully deterministic field screen (no API) — ranks a whole field by **risked NPV / capital
+  efficiency**, picking the indicated intervention per well from the same analyzers. The VP
+  "which of my 200 wells do I work over this quarter" deliverable + a fleet capital/NPV total.
+
+### Calibrated, cited economics (`src/analyzers/assumptions.py`)
+- Single source of truth for price deck (EIA STEO), LOE/SWD, discount rate, and per-intervention
+  cost / uplift / decline / chance-of-success / downtime (SPE + public operator ranges), each with
+  a source. New `get_intervention_assumptions` tool feeds the agent sourced numbers to risk the NPV
+  with (P(success), deferred production, SWD drag) instead of inventing them.
+
+### Robustness & model economics
+- **Adversarial eval** (`evals/adversarial.py`): **5/5 probes pass** — resists two prompt-injection
+  attempts (a note ordering a P&A; a note ordering a false all-clear) and degrades gracefully on
+  missing ESP readings, a physically-impossible rate, and a mislabeled lift type. **Self-consistency:
+  2/3** runs agreed on a borderline gas-vs-scale well (67%) — honest weak spot; `run_review(temperature=0)`
+  added for reproducible decoding as the fix.
+- **Model accuracy/cost frontier** (`evals/model_frontier.py`): on a 12-case per-class subset,
+  **Haiku and Sonnet both score 100%**, but Haiku is **~4× cheaper ($0.029 vs $0.117/review) and
+  ~2.4× faster (22.5s vs 54.7s)** → Haiku is the right default for this task.
+
+### Demo
+- Eval dashboard tab upgraded: dev + **blind-holdout** headline, per-class agreement table.
+
 ## [0.4.0] — 2026-06-03
 
 Eval-credibility + domain-depth overhaul. The headline number is now earned by

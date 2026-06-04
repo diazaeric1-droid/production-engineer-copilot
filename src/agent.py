@@ -32,7 +32,7 @@ Follow this process:
    - **Gas lift well with slugging / liquid loading signal** → gas lift optimization (injection rate adjustment, valve check, deliquification).
    - **Old well (15+ years), sustained rates < 5-10 BOPD, workover cost > expected NPV** → P&A (Plug & Abandon). State this explicitly as the primary recommendation; do not propose a workover on a sub-economic stripper well.
    - **Insufficient data (the `fit_decline_curve` tool errors / can't fit because there are too few production points, AND there are no ESP readings or dyno cards to diagnose lift)** → the primary recommendation MUST be stated as **"Insufficient data to make a recommendation"** (use those words). Do NOT default to "continue monitoring / routine surveillance" here — "monitor" means you have *confirmed the well is healthy*, which you cannot do without a fittable decline or any lift diagnostic. And do NOT invent an intervention. List exactly which data you need to proceed (more production months, an ESP reading set, a dyno card). Honesty beats both a fabricated call and a false all-clear.
-4. Call `evaluate_intervention` for each candidate. Use these realistic uplift ranges for a Permian/Delaware unconventional well:
+4. For each candidate, FIRST call `get_intervention_assumptions` to pull the calibrated, source-cited cost / uplift / decline / chance-of-success / downtime, then call `evaluate_intervention` with those numbers — pass `prob_success`, `deferred_days`, `base_rate_bopd` (current oil rate), `water_cut_pct` and `water_disposal_per_bbl` for a properly risked NPV. Prefer the calibrated assumptions over inventing numbers; the ranges below are a fallback sanity-check:
    - **Acid stimulation (matrix or diverted):** +80 to +200 BOPD initial, decline 0.6-0.9/yr, cost $120K-$220K
    - **ESP swap (right-sized):** +50 to +150 BOPD initial (mostly from POR restoration, not added drawdown), decline 0.5-0.7/yr, cost $250K-$400K
    - **ESP-to-beam conversion:** +20 to +60 BOPD steady-state, decline 0.3-0.5/yr, cost $200K-$350K
@@ -52,8 +52,13 @@ Be specific and quantitative. Write the way a Staff Production Engineer would wr
 **Output ONLY the markdown report.** No preamble like "All data in hand" or "Compiling the report now." The first character of your response must be the `#` of the report header."""
 
 
-def run_review(well_path: str, model: str = "claude-sonnet-4-6", verbose: bool = False) -> str:
-    """Run the agent loop on a single well file. Returns the markdown report."""
+def run_review(well_path, model: str = "claude-sonnet-4-6", verbose: bool = False,
+               return_stats: bool = False, temperature: float | None = None):
+    """Run the agent loop on a single well. `well_path` is a JSON path OR a pre-built
+    WellFile (e.g. from a real-data adapter). Returns the markdown report — or, if
+    return_stats=True, a (report, stats) tuple where stats carries token usage, wall-clock
+    latency, tool-call count, and iterations (used by the model cost/accuracy frontier)."""
+    import time
     load_dotenv()
     # load_dotenv() will NOT overwrite an env var that's already set — including an empty
     # one. A shell that exports ANTHROPIC_API_KEY="" (common in sandboxes/CI shims) would
@@ -69,7 +74,7 @@ def run_review(well_path: str, model: str = "claude-sonnet-4-6", verbose: bool =
     client = Anthropic(api_key=api_key)
     console = Console()
 
-    well = WellFile.from_json(well_path)
+    well = well_path if isinstance(well_path, WellFile) else WellFile.from_json(well_path)
     executor = ToolExecutor(well)
 
     if verbose:
@@ -80,14 +85,26 @@ def run_review(well_path: str, model: str = "claude-sonnet-4-6", verbose: bool =
 
     system_prompt = SYSTEM_PROMPT.format(today=date.today().isoformat())
     max_iterations = 10
+    stats = {"model": model, "input_tokens": 0, "output_tokens": 0,
+             "tool_calls": 0, "iterations": 0, "latency_s": 0.0}
+    t0 = time.time()
+
+    def _ret(report):
+        stats["latency_s"] = round(time.time() - t0, 2)
+        return (report, stats) if return_stats else report
+
     for iteration in range(max_iterations):
-        response = client.messages.create(
-            model=model,
-            max_tokens=4096,
-            system=system_prompt,
-            tools=TOOL_SCHEMAS,
-            messages=messages,
-        )
+        stats["iterations"] = iteration + 1
+        # temperature defaults to the API default; pass temperature=0 for reproducible,
+        # self-consistent reviews (an advisory tool should not flip its call run-to-run).
+        create_kwargs = dict(model=model, max_tokens=4096, system=system_prompt,
+                             tools=TOOL_SCHEMAS, messages=messages)
+        if temperature is not None:
+            create_kwargs["temperature"] = temperature
+        response = client.messages.create(**create_kwargs)
+        if getattr(response, "usage", None):
+            stats["input_tokens"] += response.usage.input_tokens
+            stats["output_tokens"] += response.usage.output_tokens
 
         messages.append({"role": "assistant", "content": response.content})
 
@@ -97,11 +114,12 @@ def run_review(well_path: str, model: str = "claude-sonnet-4-6", verbose: bool =
             first_header = final.find("\n#")
             if first_header > 0 and not final.lstrip().startswith("#"):
                 final = final[first_header:].lstrip()
-            return final
+            return _ret(final)
 
         tool_results = []
         for block in response.content:
             if block.type == "tool_use":
+                stats["tool_calls"] += 1
                 if verbose:
                     console.print(f"[dim]→ tool: {block.name}({block.input})[/]")
                 result = executor.dispatch(block.name, block.input)
@@ -116,7 +134,7 @@ def run_review(well_path: str, model: str = "claude-sonnet-4-6", verbose: bool =
         else:
             break
 
-    return "Agent stopped without completing the review."
+    return _ret("Agent stopped without completing the review.")
 
 
 def main():

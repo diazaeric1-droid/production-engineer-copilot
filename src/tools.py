@@ -19,6 +19,7 @@ from .analyzers.economics import (
 )
 from .analyzers.esp_diagnostics import evaluate_esp
 from .analyzers.dyno_card import evaluate_dyno_card
+from .analyzers import assumptions as A
 from .data_loader import WellFile
 
 
@@ -160,6 +161,28 @@ TOOL_SCHEMAS = [
             "are driven by the water or gas stream, not the oil rate."
         ),
         "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_intervention_assumptions",
+        "description": (
+            "Look up the project's CALIBRATED, source-cited economic defaults for an "
+            "intervention — all-in cost, typical oil uplift, uplift decline, chance of "
+            "success, and job downtime — plus the standard price deck, LOE, and SWD cost. "
+            "Use these instead of inventing numbers; feed them into evaluate_intervention "
+            "(pass prob_success, deferred_days, water_cut_pct, water_disposal_per_bbl for a "
+            "risked NPV). Sources: EIA STEO price deck, SPE artificial-lift literature, "
+            "public operator cost ranges."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "intervention": {
+                    "type": "string",
+                    "description": "Intervention name (e.g. 'acid_stimulation', 'esp_swap', 'gas_separator')",
+                },
+            },
+            "required": ["intervention"],
+        },
     },
     {
         "name": "evaluate_esp_economic_life",
@@ -400,6 +423,27 @@ class ToolExecutor:
             "gor_slope_scf_per_bbl_per_yr": round(t.gor_slope_scf_per_bbl_per_yr, 0),
             "gor_trend": t.gor_trend,
             "flags": t.flags,
+        }
+
+    def _tool_get_intervention_assumptions(self, intervention: str) -> dict:
+        d = A.intervention_defaults(intervention)
+        market = {
+            "realized_price_usd_per_bbl": A.REALIZED_PRICE_USD_PER_BBL,
+            "wti_price_usd_per_bbl": A.WTI_PRICE_USD_PER_BBL,
+            "loe_usd_per_bbl": A.LOE_USD_PER_BBL,
+            "swd_usd_per_bbl_water": A.SWD_USD_PER_BBL_WATER,
+            "discount_rate": A.DISCOUNT_RATE,
+            "economic_limit_bopd": A.ECONOMIC_LIMIT_BOPD,
+            "source": "EIA STEO price deck; Permian LOE/SWD public ranges; SPE artificial-lift literature",
+        }
+        if d is None:
+            return {"intervention": intervention, "found": False,
+                    "note": "No calibrated default; use engineering judgement.", "market": market}
+        return {
+            "intervention": intervention, "found": True,
+            "cost_usd": d["cost_usd"], "typical_uplift_bopd": d["uplift_bopd"],
+            "uplift_decline_per_yr": d["uplift_decline"], "prob_success": d["p_success"],
+            "deferred_days": d["deferred_days"], "market": market,
         }
 
     def _tool_evaluate_esp_economic_life(self, remaining_eur_bbl: float,

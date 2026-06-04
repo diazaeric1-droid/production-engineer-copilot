@@ -5,6 +5,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .assumptions import (
+    REALIZED_PRICE_USD_PER_BBL, LOE_USD_PER_BBL, DISCOUNT_RATE,
+    ESP_RUN_LIFE_YEARS, BEAM_RUN_LIFE_YEARS,
+    ESP_WORKOVER_COST_USD, BEAM_CONVERSION_COST_USD,
+)
+
 
 @dataclass
 class InterventionEconomics:

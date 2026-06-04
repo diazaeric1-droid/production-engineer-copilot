@@ -114,6 +114,33 @@ signal is verified reachable from the deterministic tools). Real wells have over
 signatures — the next credibility step is real operator data and the blind inter-rater PE panel
 (`make_human_grading_sheet.py`), not a higher synthetic number.
 
+## Beyond the synthetic score (v0.5)
+
+The synthetic agreement is saturated; these levers prove it's real, harden it, and show value.
+
+- **Runs on real public data.** `src/adapters/public_data.py` ingests the **Volve** (Equinor open
+  North Sea dataset) and generic **NDIC / Texas RRC** schemas — handling Sm³→bbl, monthly→daily
+  rates, bar→psi. The agent reviewed real Volve producer 15/9-F-12 and correctly flagged a subsea
+  ESP running at half its POR floor with a rising 54% water cut (`evals/real_reviews/`). See
+  [`data/real/README.md`](data/real/README.md) to point it at the genuine dataset.
+- **Field / portfolio mode.** `python -m src.portfolio data/synthetic/well_*.json` ranks a whole
+  field by **risked NPV / capital efficiency** — the "which of my 200 wells do I work over this
+  quarter" triage a VP actually wants — fully deterministic, no API cost.
+- **Cited economics.** `src/analyzers/assumptions.py` is a single, source-tagged source of truth
+  (EIA price deck, SPE artificial-lift run-life, public LOE/SWD/cost ranges); the agent pulls it
+  via a tool and risks every NPV by chance-of-success, deferred production, and water-disposal drag.
+- **Robustness eval** (`python -m evals.adversarial`): **5/5** — resists prompt injection (notes
+  ordering a P&A or a false all-clear) and degrades gracefully on missing/garbage/mislabeled data.
+  Self-consistency 2/3 on a borderline well; `run_review(temperature=0)` for reproducible decoding.
+- **Model accuracy/cost frontier** (`python -m evals.model_frontier`): Haiku and Sonnet both **100%**
+  on a per-class subset, but **Haiku is ~4× cheaper (~$0.03/review) and ~2.4× faster** → the right
+  default for this task.
+
+| Model | Agreement | $/review | Latency |
+|---|---|---|---|
+| Claude Haiku 4.5 | 100% (12/12) | **$0.029** | 22.5s |
+| Claude Sonnet 4.6 | 100% (12/12) | $0.117 | 54.7s |
+
 ## Roadmap
 
 - [x] v0.1 — Decline curve + ESP diagnostics + economics + intervention heuristics + 20-case eval @ 0.90
@@ -121,7 +148,8 @@ signatures — the next credibility step is real operator data and the blind int
 - [x] v0.4 — Dyno-card interpretation tool (closes the pump-off gap) + ESP-economic-life evaluator (closes the ESP-to-beam gap)
 - [x] v0.4 — De-leaked + parameterized generator, 41-case dev set, blind 18-case holdout, boundary cases
 - [x] v0.4 — Water-cut/GOR trend tool, VP-grade risked economics, LLM-as-judge + confusion matrix + inter-rater sheet
-- [ ] v0.5 — Multi-well portfolio mode (rank a field of wells by intervention NPV)
+- [x] v0.5 — Multi-well portfolio mode (rank a field of wells by risked intervention NPV)
+- [x] v0.5 — Real public-data adapter (Volve / NDIC / RRC), cited economics, adversarial + model-cost evals
 - [ ] v0.6 — Connect to common SCADA/historian APIs (PI, Ignition)
 - [ ] v0.7 — Chain into AFE Copilot — well review → intervention selection → draft AFE in one workflow
 
