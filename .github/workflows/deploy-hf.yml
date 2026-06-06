@@ -1,0 +1,29 @@
+name: Deploy to Hugging Face Space
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -U "huggingface_hub>=0.25"
+      - name: Sync to Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+          HfApi(token=os.environ["HF_TOKEN"]).upload_folder(
+              folder_path=".",
+              repo_id="diazaeric1/pe-copilot",          # <-- CHANGE per repo (see table)
+              repo_type="space",
+              commit_message="Deploy from GitHub Actions",
+              ignore_patterns=[".git*", ".github/*", ".venv/*", "**/__pycache__/*", "*.pyc", ".pytest_cache/*"],
+          )
+          PY
