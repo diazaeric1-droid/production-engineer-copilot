@@ -34,55 +34,20 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
+import theme
 from src import __version__ as APP_VERSION
 from src.agent import run_review
 from src.analyzers.decline_curve import fit_decline, analyze_type_curve
 from src.analyzers.economics import evaluate_intervention, simulate_intervention
 from src.analyzers.esp_diagnostics import evaluate_esp
+from src.afe_preview import build_afe_preview
+from src.analyzers import assumptions as A
 from src.data_loader import WellFile
 from src.tools import AFE_INTERVENTIONS, export_afe_diagnosis
 
 
-st.set_page_config(
-    page_title="Production Engineer Copilot",
-    page_icon="⛽",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-# ---------- styling ---------------------------------------------------------
-
-st.markdown("""
-<style>
-    /* Don't touch Streamlit's sticky header — that breaks scroll behavior.
-       Just trim the gap between Streamlit's toolbar and our content. */
-    .block-container {padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1400px;}
-    [data-testid="stMetricValue"] {font-size: 1.3rem; line-height: 1.2;}
-    [data-testid="stMetricLabel"] {font-size: 0.75rem; font-weight: 600; opacity: 0.8;}
-    [data-testid="stMetricDelta"] {font-size: 0.75rem;}
-    .stTabs [data-baseweb="tab-list"] {gap: 8px;}
-    .stTabs [data-baseweb="tab"] {padding: 0.4rem 1.1rem; font-weight: 600;}
-    hr {margin: 0.4rem 0 !important;}
-    div.flag-high {background: #4a1010; color: #ffb3b3; padding: 0.3rem 0.7rem;
-                   border-radius: 6px; display: inline-block; margin: 0.15rem;
-                   font-size: 0.8rem; font-weight: 600;}
-    div.flag-ok {background: #103b1a; color: #b3ffc7; padding: 0.3rem 0.7rem;
-                 border-radius: 6px; display: inline-block; margin: 0.15rem;
-                 font-size: 0.8rem; font-weight: 600;}
-    div.app-header {
-        display: flex; align-items: center; gap: 1rem;
-        padding: 0.2rem 0 0.5rem 0;
-    }
-    .app-title {font-size: 1.4rem; font-weight: 700; line-height: 1.1;}
-    .app-subtitle {font-size: 0.82rem; color: #999;}
-    .eval-chip {background:#103b1a; color:#b3ffc7; padding:0.2rem 0.65rem;
-                border-radius:10px; font-size:0.75rem; font-weight:600;
-                margin-left: auto; white-space: nowrap;}
-    .ver-chip {background:#10233b; color:#b3d4ff; padding:0.2rem 0.65rem;
-               border-radius:10px; font-size:0.75rem; font-weight:600;
-               margin-left: 0.5rem; white-space: nowrap;}
-</style>
-""", unsafe_allow_html=True)
+theme.setup_page("Production Engineer Copilot", icon="⛽")
+theme.suite_nav("pe-copilot")
 
 # ---------- sidebar ----------------------------------------------------------
 
@@ -105,7 +70,7 @@ with st.sidebar:
         help="Bring your own key — used only for this session, never stored. Powers the AI well "
              "review. Get one at console.anthropic.com. The charts, decline fit, ESP diagnostics, "
              "economics, and eval dashboard all work without it.")
-    run = st.button("Run AI well review", type="primary", use_container_width=True)
+    run = st.button("Run AI well review", type="primary", width="stretch")
     st.caption("Review takes ~30 sec and costs ~$0.05 of your own API credit.")
 
     st.divider()
@@ -116,10 +81,71 @@ with st.sidebar:
         "Engineering numbers stay trusted; LLM stays in its lane."
     )
 
-# ---------- compute deterministic analytics once -----------------------------
+# ---------- load the well (cheap) so the header can render first -------------
 
 well = WellFile.from_json(chosen)
 hist = pd.DataFrame(well.production_history)
+
+# ---------- compact header (title + well meta + eval chip on one row) -------
+
+def _eval_chip_text() -> str:
+    """Read the committed blind-holdout result so the header chip never goes stale."""
+    try:
+        rs = json.loads((REPO_ROOT / "evals" / "results" / "holdout"
+                         / "summary_holdout.json").read_text())
+        sc = [r for r in rs if "recommendation_match" in r]
+        if sc:
+            agree = sum(1 for r in sc if r.get("recommendation_match")) / len(sc)
+            return f"● {agree:.2f} blind-holdout eval ({len(sc)} cases)"
+    except Exception:
+        pass
+    return "● eval-gated (see Evals tab)"
+
+
+_EVAL_CHIP = _eval_chip_text()
+
+_well_meta = (
+    f"{well.well_id} · {well.api_number} · {well.field} · "
+    f"{well.completion.get('formation', '—')} · {well.artificial_lift.get('type', '—')} lift"
+    " — github.com/diazaeric1-droid/production-engineer-copilot"
+)
+theme.header(
+    "Production Engineer Copilot",
+    subtitle=_well_meta,
+    chips=[(f"v{APP_VERSION}", "ver"), (_EVAL_CHIP, "eval")],
+)
+
+with st.expander(f"🆕 What's new in v{APP_VERSION}"):
+    st.markdown(
+        "- **Unified Upstream Copilot Suite theme** — dark + navy look with a cross-app "
+        "sidebar **suite navigator** linking the PE, AFE, ESP, Digest, Deferment & Capital apps\n"
+        "- **Monte-Carlo NPV distribution** — P10/P50/P90 histogram in the Economics tab, "
+        "not just the point estimate\n"
+        "- **Generate AFE** — inline one-page authorization preview (cost split + net economics "
+        "+ authority routing) with diagnosis-JSON export and a deep-link into AFE Copilot\n"
+        "- **Shared fleet registry** — each well carries its Permian (Midland / Delaware) "
+        "field / formation identity, consistent across the suite\n"
+        "- **Crash fix** — wells with < 5 production points now show an \"insufficient data\" "
+        "panel instead of erroring the dashboard\n"
+        "- **Bring-your-own-key** — paste your Anthropic key in the sidebar (used only this "
+        "session, never stored); all deterministic analysis works with no key"
+    )
+
+# ---------- guard: wells with too few points can't be decline-fit ------------
+# fit_decline raises ValueError("Need at least 5 valid production points"); some
+# wells (e.g. well_040/well_041) carry only 4 points. Mirror the agent's graceful
+# "insufficient data" path instead of crashing the whole app.
+if len(hist) < 5:
+    st.info(
+        f"**{well.well_id}** has only {len(hist)} production point(s) — too few for a "
+        "hyperbolic decline fit (need ≥ 5) or the full diagnostic dashboard. "
+        "Pick another well, or add production history for this one."
+    )
+    theme.flag("Insufficient production history", "warn")
+    st.stop()
+
+# ---------- compute deterministic analytics once -----------------------------
+
 fit = fit_decline(hist["day"].values, hist["oil_bopd"].values, model="hyperbolic")
 # True type curve: fit early/established decline and extrapolate (not dragged down
 # by the degraded tail like the full-history fit is).
@@ -141,57 +167,6 @@ if well.artificial_lift.get("type") == "ESP" and well.esp_readings:
         esp_diag = evaluate_esp(well.esp_readings, well.artificial_lift["pump_spec"])
     except Exception:
         esp_diag = None
-
-# ---------- compact header (title + well meta + eval chip on one row) -------
-
-def _eval_chip_text() -> str:
-    """Read the committed blind-holdout result so the header chip never goes stale."""
-    try:
-        rs = json.loads((REPO_ROOT / "evals" / "results" / "holdout"
-                         / "summary_holdout.json").read_text())
-        sc = [r for r in rs if "recommendation_match" in r]
-        if sc:
-            agree = sum(1 for r in sc if r.get("recommendation_match")) / len(sc)
-            return f"● {agree:.2f} blind-holdout eval ({len(sc)} cases)"
-    except Exception:
-        pass
-    return "● eval-gated (see Evals tab)"
-
-
-_EVAL_CHIP = _eval_chip_text()
-
-st.markdown(
-    f"<div class='app-header'>"
-    f"<div>"
-    f"<div class='app-title'>⛽ Production Engineer Copilot</div>"
-    f"<div class='app-subtitle'>"
-    f"{well.well_id} · {well.api_number} · {well.field} · "
-    f"{well.completion.get('formation', '—')} · {well.artificial_lift.get('type', '—')} lift"
-    f" — <a href='https://github.com/diazaeric1-droid/production-engineer-copilot' "
-    f"style='color:#5a9fd4;'>GitHub</a>"
-    f"</div>"
-    f"</div>"
-    f"<div class='eval-chip'>{_EVAL_CHIP}</div>"
-    f"<div class='ver-chip'>v{APP_VERSION}</div>"
-    f"</div>",
-    unsafe_allow_html=True,
-)
-
-with st.expander(f"🆕 What's new in v{APP_VERSION}"):
-    st.markdown(
-        "- **Runs on real public data** — Volve (Equinor) + NDIC/RRC adapter "
-        "(Sm³→bbl, monthly→daily, bar→psi); reviewed the Volve ESP producer 15/9-F-12\n"
-        "- **Field / portfolio mode** — rank a whole field by risked NPV / capital efficiency "
-        "(the VP \"which wells this quarter\" view)\n"
-        "- **Cited economics** — EIA/SPE source-tagged assumptions, risked by P(success), "
-        "deferred production during the job, and SWD/water-disposal drag\n"
-        "- **Eval-credibility overhaul** — 41-case dev + 18-case **blind holdout**, de-leaked; "
-        "**1.00 agreement on the holdout**, confusion matrix + LLM-as-judge + CI gate\n"
-        "- **Robustness + model-cost frontier** — adversarial eval 5/5; Haiku matches Sonnet "
-        "at ~4× lower cost (~$0.03/review)\n"
-        "- **Bring-your-own-key** — paste your Anthropic key in the sidebar (used only this "
-        "session, never stored); all deterministic analysis works with no key"
-    )
 
 # ---------- KPI metrics row --------------------------------------------------
 
@@ -259,31 +234,28 @@ with tab_trends:
         fig.add_trace(go.Scatter(
             x=hist["day"], y=hist["oil_bopd"],
             mode="markers+lines", name="Actual oil rate",
-            marker=dict(size=10, color="#1f77b4"),
-            line=dict(color="#1f77b4", width=2),
+            marker=dict(size=10, color=theme.BLUE),
+            line=dict(color=theme.BLUE, width=2),
         ))
         fig.add_trace(go.Scatter(
             x=days_dense, y=fit_curve,
             mode="lines", name=tc_label,
-            line=dict(color="#ff7f0e", width=2, dash="dash"),
+            line=dict(color=theme.AMBER, width=2, dash="dash"),
         ))
         # Highlight the last actual point
         fig.add_trace(go.Scatter(
             x=[hist["day"].iloc[-1]], y=[latest_oil],
             mode="markers", name="Today",
-            marker=dict(size=18, color="red" if today_below else "green",
+            marker=dict(size=18, color=theme.RED if today_below else theme.GREEN,
                        symbol="circle-open", line=dict(width=3)),
             showlegend=False,
         ))
         fig.update_layout(
-            height=380, margin=dict(l=10, r=10, t=10, b=10),
             xaxis_title="Days on production",
             yaxis_title="Oil rate (BOPD)",
-            legend=dict(orientation="h", yanchor="top", y=1.15, xanchor="left", x=0),
-            template="plotly_dark",
             hovermode="x unified",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(theme.style_fig(fig, height=380), width="stretch")
 
     with col_b:
         st.subheader("Fit summary")
@@ -345,23 +317,23 @@ with tab_trends:
         # BFPD with POR shaded band
         fig_esp.add_trace(go.Scatter(
             x=readings["date"], y=readings["bfpd"], mode="lines+markers",
-            line=dict(color="#1f77b4", width=2), marker=dict(size=8),
+            line=dict(color=theme.BLUE, width=2), marker=dict(size=8),
             showlegend=False,
         ), row=1, col=1)
         fig_esp.add_hrect(
             y0=esp_diag.por_min_bfpd, y1=esp_diag.por_max_bfpd,
-            fillcolor="green", opacity=0.15, line_width=0, row=1, col=1,
+            fillcolor=theme.GREEN, opacity=0.15, line_width=0, row=1, col=1,
         )
         # Intake
-        intake_color = "red" if readings["intake_pressure_psi"].iloc[-1] < 50 else "#1f77b4"
+        intake_color = theme.RED if readings["intake_pressure_psi"].iloc[-1] < 50 else theme.BLUE
         fig_esp.add_trace(go.Scatter(
             x=readings["date"], y=readings["intake_pressure_psi"],
             mode="lines+markers", line=dict(color=intake_color, width=2),
             marker=dict(size=8), showlegend=False,
         ), row=1, col=2)
-        fig_esp.add_hline(y=50, line_dash="dash", line_color="orange", row=1, col=2)
+        fig_esp.add_hline(y=50, line_dash="dash", line_color=theme.AMBER, row=1, col=2)
         # Motor temp
-        temp_color = "red" if readings["motor_temp_f"].iloc[-1] > 320 else "#1f77b4"
+        temp_color = theme.RED if readings["motor_temp_f"].iloc[-1] > 320 else theme.BLUE
         fig_esp.add_trace(go.Scatter(
             x=readings["date"], y=readings["motor_temp_f"],
             mode="lines+markers", line=dict(color=temp_color, width=2),
@@ -369,18 +341,17 @@ with tab_trends:
         ), row=2, col=1)
         # Motor amps with nameplate reference
         nameplate = well.artificial_lift["pump_spec"].get("motor_amps_nameplate", 0)
-        amp_color = "red" if readings["motor_amps"].iloc[-1] > nameplate * 1.15 else "#1f77b4"
+        amp_color = theme.RED if readings["motor_amps"].iloc[-1] > nameplate * 1.15 else theme.BLUE
         fig_esp.add_trace(go.Scatter(
             x=readings["date"], y=readings["motor_amps"],
             mode="lines+markers", line=dict(color=amp_color, width=2),
             marker=dict(size=8), showlegend=False,
         ), row=2, col=2)
         if nameplate:
-            fig_esp.add_hline(y=nameplate, line_dash="dash", line_color="orange",
+            fig_esp.add_hline(y=nameplate, line_dash="dash", line_color=theme.AMBER,
                               annotation_text="Nameplate", row=2, col=2)
-        fig_esp.update_layout(height=380, margin=dict(l=10, r=10, t=40, b=10),
-                              template="plotly_dark", showlegend=False)
-        st.plotly_chart(fig_esp, use_container_width=True)
+        fig_esp.update_layout(showlegend=False)
+        st.plotly_chart(theme.style_fig(fig_esp, height=380, legend=False), width="stretch")
 
         # Flag badges
         if esp_diag.flags:
@@ -433,6 +404,28 @@ with tab_econ:
         help=f"Fraction of trials with NPV>0 AND payout < {sim['payout_cutoff_months']:.0f} months",
     )
 
+    # Monte-Carlo NPV distribution: the full spread the P10/P50/P90 summarize.
+    npv_samples = sim["npv_samples"] / 1e6  # plot in $MM
+    fig_dist = go.Figure()
+    fig_dist.add_trace(go.Histogram(
+        x=npv_samples, nbinsx=60, marker=dict(color=theme.BLUE),
+        name="NPV trials", showlegend=False,
+    ))
+    for x_usd, color, tag in (
+        (sim["npv_p90_usd"], theme.RED, "P90"),
+        (sim["npv_p50_usd"], theme.BLUE, "P50"),
+        (sim["npv_p10_usd"], theme.GREEN, "P10"),
+    ):
+        fig_dist.add_vline(
+            x=x_usd / 1e6, line_dash="dash", line_color=color,
+            annotation_text=tag, annotation_position="top",
+        )
+    fig_dist.update_layout(
+        title="Monte-Carlo NPV distribution",
+        xaxis_title="NPV ($MM)", yaxis_title="Trials",
+    )
+    st.plotly_chart(theme.style_fig(fig_dist, height=300, legend=False), width="stretch")
+
     # Tornado chart (one-at-a-time low/high NPV swing per variable, sorted by swing).
     tdata = sim["tornado"]
     base_npv = sim["npv_p50_usd"]
@@ -452,7 +445,7 @@ with tab_econ:
             x=[right - left],
             base=[left],
             orientation="h",
-            marker=dict(color="#5a9fd4"),
+            marker=dict(color=theme.BLUE),
             showlegend=False,
             hovertemplate=(
                 f"{labels.get(var, var)}<br>"
@@ -460,14 +453,13 @@ with tab_econ:
                 f"swing: ${d['swing']/1e6:,.2f}MM<extra></extra>"
             ),
         ))
-    fig_t.add_vline(x=base_npv, line_dash="dash", line_color="orange",
+    fig_t.add_vline(x=base_npv, line_dash="dash", line_color=theme.AMBER,
                     annotation_text="P50", annotation_position="top")
     fig_t.update_layout(
         title="Tornado — NPV sensitivity (one-at-a-time)",
-        height=300, margin=dict(l=10, r=10, t=40, b=10),
-        xaxis_title="NPV ($)", template="plotly_dark", bargap=0.4,
+        xaxis_title="NPV ($)", bargap=0.4,
     )
-    st.plotly_chart(fig_t, use_container_width=True)
+    st.plotly_chart(theme.style_fig(fig_t, height=300, legend=False), width="stretch")
 
     verdict = (
         "ROBUST" if sim["npv_p90_usd"] > 0 and sim["probability_of_payout"] > 0.8
@@ -515,6 +507,81 @@ with tab_econ:
             st.json(afe_obj)
     except ValueError as e:
         st.warning(f"Cannot build AFE diagnosis: {e}")
+
+    # ---- In-app AFE authorization preview (closes diagnose -> authorize) -----
+    st.divider()
+    st.markdown("##### 📝 Authorize — generate AFE preview")
+    st.caption(
+        "Closes the diagnose→authorize loop in-app: a one-page AFE authorization "
+        "preview from the selected intervention's calibrated cost (no cross-service "
+        "call, no API key). Routes the $ amount to the required approver, then open "
+        "the AFE Copilot to draft & track the full authorization."
+    )
+    if st.button("Generate AFE", type="primary", key="gen_afe"):
+        st.session_state["_show_afe"] = True
+    if st.session_state.get("_show_afe"):
+        # Deterministic net economics for the selected AFE intervention using its
+        # calibrated cost + the engineer's rate/decline inputs above.
+        afe_defaults = A.intervention_defaults(afe_interv)
+        afe_cost = float(afe_defaults["cost_usd"]) if afe_defaults else float(mc_cost)
+        afe_econ_obj = evaluate_intervention(
+            name=afe_interv,
+            treatment_cost_usd=afe_cost,
+            incremental_rate_bopd=float(mc_rate),
+            uplift_decline_per_yr=float(mc_decline),
+            realized_price_per_bbl=float(mc_price),
+            prob_success=(afe_defaults["p_success"] if afe_defaults else 1.0),
+        )
+        afe_econ = {
+            "npv_10pct_usd": afe_econ_obj.npv_10pct_usd,
+            "payout_months": afe_econ_obj.payout_months,
+            "incremental_rate_bopd": float(mc_rate),
+            "profitability_index": afe_econ_obj.profitability_index,
+        }
+        afe_diag_ctx = {
+            "well_id": well.well_id, "api_number": well.api_number,
+            "field": well.field, "operator": getattr(well, "operator", None),
+            "primary_diagnosis": afe_diag,
+        }
+        preview = build_afe_preview(afe_diag_ctx, afe_interv, afe_econ)
+
+        if not preview.get("afe_required"):
+            theme.flag(f"No AFE required — {preview.get('reason', '')}", "warn")
+        else:
+            ci1, ci2, ci3 = st.columns(3)
+            ci1.metric("Gross AFE estimate", f"${preview['gross_cost_usd']/1e3:,.0f}K")
+            ci2.metric("Tangible (capitalized)",
+                       f"${preview['tangible_cost_usd']/1e3:,.0f}K",
+                       help=f"{preview['tangible_pct']*100:.0f}% of gross — capitalized equipment")
+            ci3.metric("Intangible (IDC)",
+                       f"${preview['intangible_cost_usd']/1e3:,.0f}K",
+                       help="Intangible drilling/service cost — deductible in-year")
+
+            ne1, ne2, ne3 = st.columns(3)
+            npv = preview.get("net_npv_usd")
+            ne1.metric("Net risked NPV @10%",
+                       f"${npv/1e6:,.2f}MM" if npv is not None else "—")
+            payout = preview.get("payout_months")
+            ne2.metric("Payout",
+                       f"{payout:.0f} mo" if payout is not None and payout != float("inf")
+                       else "no payout")
+            pi = preview.get("profitability_index")
+            ne3.metric("Profitability index", f"{pi:.2f}" if pi is not None else "—")
+
+            theme.flag(
+                f"Authority routing: {preview['recommended_approver']} "
+                f"(gross ${preview['gross_cost_usd']:,.0f})",
+                "ok" if (npv is not None and npv > 0) else "warn",
+            )
+            st.caption(preview["authority_basis"])
+            with st.expander("AFE preview detail (line items + identity)"):
+                st.json(preview)
+
+        st.markdown(
+            "🔗 [Open in AFE Copilot](https://diazaeric1-afe-copilot.hf.space) "
+            "to draft & track the full authorization (WI/NRI net economics, JIB "
+            "allocation, risk register, audit trail)."
+        )
 
 
 # ---- Tab 2: AI review ---
@@ -619,7 +686,7 @@ with tab_evals:
                 [{"expected class": k, "agreement": f"{h/n2*100:.0f}%", "n": n2}
                  for k, (h, n2) in sorted(cls.items(), key=lambda kv: kv[1][0] / kv[1][1])]
             )
-            st.dataframe(cls_df, use_container_width=True, hide_index=True)
+            st.dataframe(cls_df, width="stretch", hide_index=True)
 
             # Per-case pass/fail table
             st.markdown("##### Per-case results")
@@ -638,7 +705,7 @@ with tab_evals:
                         else ("⚠ error" if "error" in r else "—")
                     ),
                 })
-            st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(table_rows), width="stretch", hide_index=True)
 
             # Confusion-style breakdown: expected recommendation -> pass / miss counts.
             st.markdown("##### Recommendation breakdown (expected → pass / miss)")
@@ -653,7 +720,7 @@ with tab_evals:
                      "n": v["pass"] + v["miss"]}
                     for k, v in sorted(conf.items())
                 ])
-                st.dataframe(conf_df, use_container_width=True, hide_index=True)
+                st.dataframe(conf_df, width="stretch", hide_index=True)
                 misses = conf_df[conf_df["miss"] > 0]
                 if not misses.empty:
                     st.caption(

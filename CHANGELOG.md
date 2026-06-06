@@ -4,6 +4,37 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-06-06
+
+Suite-grade UX + economics depth: one upstream-copilot identity across the apps, a richer
+Economics tab, and an inline AFE handoff.
+
+### Unified "Upstream Copilot Suite" theme
+- New unified dark + navy **Upstream Copilot Suite** theme applied across the app, with a
+  cross-app sidebar **suite navigator** so the PE Copilot, AFE Copilot, ESP Failure-Risk,
+  Digest, Deferment IQ, and Capital Optimizer read as one product family.
+
+### Economics tab
+- **Monte-Carlo NPV distribution histogram (P10/P50/P90)** in the Economics tab — the full
+  risked NPV distribution, not just the point estimate.
+- **"Generate AFE"** — an inline one-page authorization preview (cost split + net economics +
+  authority routing) rendered in-app, with a diagnosis-JSON export and a deep-link straight
+  into AFE Copilot to draft the full document.
+
+### Shared fleet identity
+- **Shared fleet registry** — each well now carries its Permian (Midland / Delaware)
+  field / formation identity, consistent across the whole suite so the same well reads the
+  same everywhere in the chain.
+
+### Robustness fix
+- **Crash fix:** wells with fewer than 5 production points now render an "insufficient data"
+  panel (mirroring the agent's graceful path) instead of erroring out the dashboard on the
+  hyperbolic decline fit.
+
+### Maintenance
+- Swept the deprecated `use_container_width` (→ `width="stretch"`); now requires
+  **streamlit ≥ 1.50**.
+
 ## [0.5.0] — 2026-06-04
 
 Beyond the saturated synthetic score: prove it on real data, harden it, show PE value.

@@ -307,6 +307,7 @@ def simulate_intervention(
         "npv_p50_usd": p50,   # median
         "npv_p10_usd": p10,   # optimistic
         "npv_mean_usd": float(np.mean(npv)),
+        "npv_samples": npv,  # raw per-trial NPV draws (for plotting the MC distribution)
         "probability_of_payout": prob_payout,  # NPV>0 AND payout < cutoff
         "payout_cutoff_months": float(payout_cutoff_months),
         "tornado": tornado,
