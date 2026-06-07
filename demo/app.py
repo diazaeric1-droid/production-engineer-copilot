@@ -63,14 +63,18 @@ from src.analyzers import assumptions as A
 from src.data_loader import WellFile
 from src.portfolio import screen_well, screen_wellfile, _NON_ECONOMIC
 from src.adapters.ndic import load_ndic_fleet
+from src.adapters.colorado import load_colorado_fleet
 from src.tools import AFE_INTERVENTIONS, export_afe_diagnosis
 
 
 DATA_DIR = REPO_ROOT / "data" / "synthetic"
+COLORADO_CSV = REPO_ROOT / "data" / "real" / "colorado" / "production.csv"
 NDIC_CSV = REPO_ROOT / "data" / "real" / "ndic" / "production.csv"
 
 # Data-source provenance copy (kept in one place; used by the sidebar toggle, the
 # badge under each header, and the fallback warning).
+_CO_DETAIL = ("Colorado ECMC (COGCC) public monthly records — DJ Basin Niobrara/Codell "
+              "horizontals, Weld County (free, no subscription). Monthly cadence; no ESP telemetry.")
 _REAL_DETAIL = ("North Dakota (NDIC) public monthly filings — Bakken (Williston). "
                 "Monthly cadence; no ESP telemetry.")
 _SYNTHETIC_DETAIL = ("Modeled wells with known ground truth (clean signatures + ESP "
@@ -102,22 +106,43 @@ def _ndic_wells(csv_path: str) -> list[WellFile]:
     return load_ndic_fleet(csv_path)
 
 
+@st.cache_resource(show_spinner=False)
+def _colorado_wells(csv_path: str) -> list[WellFile]:
+    """Cache the real Colorado (ECMC) DJ Basin fleet — same custom-class caching note."""
+    return load_colorado_fleet(csv_path)
+
+
 def _resolve_source() -> tuple[str, list[WellFile] | None, str]:
     """Resolve the ACTIVE data source from the sidebar toggle.
 
-    Returns ``(source, ndic_wells_or_None, detail)`` where source is
-    'real' or 'synthetic'. If the user picks Real but no extract exists (or it fails
-    to parse), falls back to synthetic and surfaces a one-time ``st.warning``.
+    Returns ``(source, real_wells_or_None, detail)`` where source is 'real' or
+    'synthetic'. The DEFAULT is real Colorado (ECMC) public data — free, no key. If a
+    selected real source is missing/unparseable, falls back to synthetic with a notice
+    so the app always renders.
     """
     choice = st.sidebar.radio(
         "Data source",
-        ("Synthetic (demo)", "Real — North Dakota (NDIC)"),
+        ("Real — Colorado DJ Basin (ECMC)", "Synthetic (demo)",
+         "Real — North Dakota (NDIC, your export)"),
         index=0,
-        help="Synthetic = modeled wells with known ground truth (full ESP diagnostics). "
-             "Real = North Dakota (NDIC) public monthly Bakken filings, loaded from "
-             "data/real/ndic/production.csv when present (monthly cadence, no ESP telemetry).",
+        help="Real — Colorado = FREE ECMC public monthly records (DJ Basin Niobrara/Codell "
+             "horizontals); the suite default. Synthetic = modeled wells with known ground "
+             "truth + full ESP diagnostics. Real — North Dakota = drop your own NDIC monthly "
+             "export at data/real/ndic/production.csv (NDIC bulk data is a paid subscription). "
+             "Real monthly data has no ESP telemetry, so the ESP panel is skipped on those wells.",
     )
-    if choice.startswith("Real"):
+    if choice.startswith("Real — Colorado"):
+        if COLORADO_CSV.exists():
+            try:
+                wells = _colorado_wells(str(COLORADO_CSV))
+                if wells:
+                    return "real", wells, _CO_DETAIL
+                st.sidebar.warning("Colorado extract parsed to 0 wells — showing synthetic.")
+            except Exception as e:
+                st.sidebar.warning(f"Could not read Colorado extract ({e}) — showing synthetic.")
+        else:
+            st.sidebar.warning("Colorado extract missing — showing synthetic.")
+    elif choice.startswith("Real — North Dakota"):
         if NDIC_CSV.exists():
             try:
                 wells = _ndic_wells(str(NDIC_CSV))
@@ -127,8 +152,8 @@ def _resolve_source() -> tuple[str, list[WellFile] | None, str]:
             except Exception as e:
                 st.sidebar.warning(f"Could not read NDIC extract ({e}) — showing synthetic.")
         else:
-            st.warning("No NDIC extract found in data/real/ndic/ — see README. "
-                       "Showing synthetic.")
+            st.info("No NDIC extract in data/real/ndic/ — NDIC bulk data is a paid "
+                    "subscription (see README). The default **Colorado** source is free real data.")
     return "synthetic", None, _SYNTHETIC_DETAIL
 
 

@@ -1,5 +1,7 @@
 # Real data — North Dakota (NDIC) Bakken monthly production
 
+> **Note:** The suite now defaults to **free Colorado ECMC** real data (`../colorado/`). NDIC per-well monthly production is a **paid subscription** ($100/yr Basic Services), so this remains a *bring-your-own-export* path — drop your own `production.csv` here to run on real North Dakota Bakken wells.
+
 This folder is the **drop point for a REAL public-data extract**. The app's data-source
 toggle (sidebar → **Data source → "Real — North Dakota (NDIC)"**) loads
 **`data/real/ndic/production.csv`** through `src/adapters/ndic.py` when that file is

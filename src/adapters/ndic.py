@@ -80,7 +80,19 @@ def _month_index(y: int, m: int, y0: int, m0: int) -> int:
     return (y - y0) * 12 + (m - m0)
 
 
-def load_ndic_fleet(csv_path: str | Path, days_per_month: int = 30) -> list[WellFile]:
+def load_ndic_fleet(
+    csv_path: str | Path,
+    days_per_month: int = 30,
+    *,
+    source_note: str = (
+        "Imported from North Dakota (NDIC) public monthly production filings "
+        "(Williston Basin / Bakken). Monthly cadence; no ESP telemetry, no daily "
+        "data, no failure labels in the source."
+    ),
+    field_default: str = "Williston Basin (NDIC)",
+    operator_default: str = "NDIC public filing",
+    formation_default: str = "Bakken / Three Forks",
+) -> list[WellFile]:
     """Parse a tidy NDIC monthly-production CSV into one ``WellFile`` per well.
 
     Groups rows by ``well_id``, sorts each well's months chronologically, converts
@@ -143,21 +155,19 @@ def load_ndic_fleet(csv_path: str | Path, days_per_month: int = 30) -> list[Well
                 "gas_mcfd": round(gas / days, 1),
             })
 
-        formation = g["formation"] or "Bakken / Three Forks"
+        formation = g["formation"] or formation_default
         completion = {"formation": formation}
         first_prod = f"{y0:04d}-{m0:02d}"
         notes = [
-            "Imported from North Dakota (NDIC) public monthly production filings "
-            "(Williston Basin / Bakken). Monthly cadence; no ESP telemetry, no daily "
-            "data, no failure labels in the source.",
+            source_note,
             f"{len(hist)} producing month(s); rates are monthly-total ÷ producing days.",
         ]
 
         wells.append(WellFile(
             well_id=g["well_name"] or well_id,
             api_number=well_id,                       # NDIC file/API number is the row key
-            field=g["field"] or "Williston Basin (NDIC)",
-            operator=g["operator"] or "NDIC public filing",
+            field=g["field"] or field_default,
+            operator=g["operator"] or operator_default,
             spud_date="",
             first_prod_date=first_prod,
             completion=completion,
