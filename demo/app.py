@@ -272,6 +272,9 @@ def render_well(path: str) -> None:
         subtitle=_well_meta,
         chips=[(f"v{APP_VERSION}", "ver"), (_eval_chip_text(), "eval")],
     )
+    # Cross-app deep links use the well_0NN page stem (matches sibling apps'
+    # url_path), not the ED-NNH well_id, so the same well opens in each sibling.
+    theme.well_cross_links("pe-copilot", Path(path).stem)
     _back_to_overview()
 
     # ---- per-well controls (moved out of the global sidebar) ---------------
@@ -286,6 +289,15 @@ def render_well(path: str) -> None:
                      "diagnostics, economics, and eval dashboard all work without it.")
             show_tools = st.checkbox("Show agent tool calls in review", value=True,
                                      key=f"tools_{well.well_id}")
+            _model_opts = {
+                "Claude Sonnet 4.6 (default)": "claude-sonnet-4-6",
+                "Claude Haiku (≈4× cheaper)": "claude-haiku-4-5",
+            }
+            _model_label = st.selectbox(
+                "Model", list(_model_opts), index=0, key=f"model_{well.well_id}")
+            review_model = _model_opts[_model_label]
+            st.caption("Haiku ≈ Sonnet quality on the eval at ~4× lower cost; "
+                       "Sonnet is the verified-safe default.")
         with cc2:
             run = st.button("Run AI well review", type="primary", width="stretch",
                             key=f"run_{well.well_id}")
@@ -373,7 +385,8 @@ def render_well(path: str) -> None:
         if run:
             try:
                 with st.spinner("Agent reasoning + tool calls…"):
-                    report = run_review(str(path), verbose=show_tools, api_key=byok_key or None)
+                    report = run_review(str(path), model=review_model,
+                                        verbose=show_tools, api_key=byok_key or None)
                 st.markdown(report)
                 st.download_button("⬇ Download review (Markdown)", report,
                                    file_name=f"{well.well_id}-review.md")
