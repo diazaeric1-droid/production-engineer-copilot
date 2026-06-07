@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-06-06
+
+### Added
+- **Fleet explorer (multipage)** — a Fleet Overview with fleet KPIs and a **sortable per-well
+  table** (lift, lateral length, basin·formation from the shared registry, latest oil BOPD,
+  water cut, GOR, days-on-prod, plus risked NPV / PI from the portfolio screen), and a
+  **drill-down page per well** (`st.navigation`) holding the full single-well review (decline
+  vs type curve, ESP diagnostics, Monte-Carlo economics, AI review, Generate-AFE). The <5-point
+  insufficient-data guard is preserved per well.
+
 ## [0.6.0] — 2026-06-06
 
 Suite-grade UX + economics depth: one upstream-copilot identity across the apps, a richer

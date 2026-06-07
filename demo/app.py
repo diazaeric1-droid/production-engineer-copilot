@@ -1,20 +1,29 @@
 """Streamlit demo for Production Engineer Copilot.
 
-Layout favours visual storytelling over text — KPI cards, decline plot, ESP
-diagnostic multi-panel, and intervention economics chart all render immediately
-from deterministic analyzers. The AI agent's narrative review is in its own tab.
+Multipage (``st.navigation`` + ``st.Page``): a Fleet Overview page (fleet KPIs +
+a sortable per-well table with deterministic economics from the portfolio screen)
+plus one drill-down page per well — the original single-well dashboard (KPI cards,
+decline plot vs. type curve, ESP diagnostic multi-panel, Monte-Carlo intervention
+economics, AI Review, Evals, Raw, Generate-AFE preview, and the <5-point guard).
+
+Detection / economics stay deterministic; the AI well review is BYOK-optional
+(everything else renders with no API key). Heavy loads are cached on string args.
 """
 from __future__ import annotations
 
 import json
 import sys
+from functools import partial
 from pathlib import Path
 
-# Ensure repo root is on sys.path so `src.*` imports work on Streamlit Cloud
-# (where the package isn't pip-installed, just the deps from requirements.txt).
-REPO_ROOT = Path(__file__).resolve().parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+# Ensure repo root is on sys.path so `src.*` imports work on Streamlit Cloud, and
+# the demo dir so the vendored `theme` / `fleet_registry` resolve regardless of cwd
+# (Streamlit adds the entrypoint dir at runtime; AppTest / other contexts may not).
+DEMO_DIR = Path(__file__).resolve().parent
+REPO_ROOT = DEMO_DIR.parent
+for _p in (str(REPO_ROOT), str(DEMO_DIR)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 # --- Self-heal stale bytecode / module cache (Streamlit Cloud) --------------
 # Streamlit reuses the container across redeploys. A cached .pyc or an already-
@@ -34,6 +43,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
+import fleet_registry
 import theme
 from src import __version__ as APP_VERSION
 from src.agent import run_review
@@ -43,51 +53,28 @@ from src.analyzers.esp_diagnostics import evaluate_esp
 from src.afe_preview import build_afe_preview
 from src.analyzers import assumptions as A
 from src.data_loader import WellFile
+from src.portfolio import screen_well, _NON_ECONOMIC
 from src.tools import AFE_INTERVENTIONS, export_afe_diagnosis
 
 
-theme.setup_page("Production Engineer Copilot", icon="⛽")
-theme.suite_nav("pe-copilot")
-
-# ---------- sidebar ----------------------------------------------------------
-
 DATA_DIR = REPO_ROOT / "data" / "synthetic"
 
-with st.sidebar:
-    st.subheader("Well selection")
-    well_files = sorted(DATA_DIR.glob("well_*.json"))
-    if not well_files:
-        st.error("No well files found in data/synthetic/")
-        st.stop()
-    chosen = st.selectbox(
-        "Pick a well",
-        well_files,
-        format_func=lambda p: p.stem.replace("_", " ").title(),
-    )
-    show_tools = st.checkbox("Show agent tool calls in review", value=True)
-    byok_key = st.text_input(
-        "🔑 Anthropic API key (optional)", type="password",
-        help="Bring your own key — used only for this session, never stored. Powers the AI well "
-             "review. Get one at console.anthropic.com. The charts, decline fit, ESP diagnostics, "
-             "economics, and eval dashboard all work without it.")
-    run = st.button("Run AI well review", type="primary", width="stretch")
-    st.caption("Review takes ~30 sec and costs ~$0.05 of your own API credit.")
 
-    st.divider()
-    st.subheader("How it works")
-    st.markdown(
-        "Claude reasons and writes; **deterministic Python tools** "
-        "do the engineering math (Arps decline fit, ESP POR check, NPV/IRR). "
-        "Engineering numbers stay trusted; LLM stays in its lane."
-    )
+# ---------- cached heavy loads (string args so they hash/cache cleanly) ------
 
-# ---------- load the well (cheap) so the header can render first -------------
+@st.cache_data(show_spinner=False)
+def _well_files(data_dir: str) -> list[str]:
+    """Sorted well JSON paths (as strings) under the data dir."""
+    return [str(p) for p in sorted(Path(data_dir).glob("well_*.json"))]
 
-well = WellFile.from_json(chosen)
-hist = pd.DataFrame(well.production_history)
 
-# ---------- compact header (title + well meta + eval chip on one row) -------
+@st.cache_data(show_spinner=False)
+def _load_well_cached(path: str) -> WellFile:
+    """Cache a single parsed WellFile (cheap, but called on every page)."""
+    return WellFile.from_json(path)
 
+
+@st.cache_data(show_spinner=False)
 def _eval_chip_text() -> str:
     """Read the committed blind-holdout result so the header chip never goes stale."""
     try:
@@ -102,123 +89,320 @@ def _eval_chip_text() -> str:
     return "● eval-gated (see Evals tab)"
 
 
-_EVAL_CHIP = _eval_chip_text()
+@st.cache_data(show_spinner=False)
+def _fleet_table(data_dir: str) -> pd.DataFrame:
+    """Deterministic one-row-per-well fleet table (no LLM).
 
-_well_meta = (
-    f"{well.well_id} · {well.api_number} · {well.field} · "
-    f"{well.completion.get('formation', '—')} · {well.artificial_lift.get('type', '—')} lift"
-    " — github.com/diazaeric1-droid/production-engineer-copilot"
-)
-theme.header(
-    "Production Engineer Copilot",
-    subtitle=_well_meta,
-    chips=[(f"v{APP_VERSION}", "ver"), (_EVAL_CHIP, "eval")],
-)
+    Columns: identity from the JSON + the shared fleet registry (lift, lateral,
+    basin·formation), the latest-point rates / water-cut / GOR / days-on, and the
+    deterministic portfolio screen's diagnosis + risked economics (NPV, PI). Wells
+    with < 5 production points are kept with NaN/None rather than dropped.
+    """
+    rows = []
+    for path in _well_files(data_dir):
+        stem = Path(path).stem            # registry key, e.g. "well_007"
+        meta = fleet_registry.get(stem)
+        try:
+            well = _load_well_cached(path)
+        except Exception:
+            continue
+        hist = well.production_history
+        n = len(hist)
+        oil = water = gas = gor = wc = days_on = float("nan")
+        if n:
+            last = hist[-1]
+            oil = float(last.get("oil_bopd", float("nan")))
+            water = float(last.get("water_bwpd", float("nan")))
+            gas = float(last.get("gas_mcfd", float("nan")))
+            days_on = int(last.get("day", 0))
+            if not np.isnan(oil) and not np.isnan(water) and (oil + water) > 0:
+                wc = water / (oil + water) * 100.0
+            if not np.isnan(gas) and not np.isnan(oil) and oil > 0:
+                gor = gas * 1000.0 / oil
 
-with st.expander(f"🆕 What's new in v{APP_VERSION}"):
-    st.markdown(
-        "- **Unified Upstream Copilot Suite theme** — dark + navy look with a cross-app "
-        "sidebar **suite navigator** linking the PE, AFE, ESP, Digest, Deferment & Capital apps\n"
-        "- **Monte-Carlo NPV distribution** — P10/P50/P90 histogram in the Economics tab, "
-        "not just the point estimate\n"
-        "- **Generate AFE** — inline one-page authorization preview (cost split + net economics "
-        "+ authority routing) with diagnosis-JSON export and a deep-link into AFE Copilot\n"
-        "- **Shared fleet registry** — each well carries its Permian (Midland / Delaware) "
-        "field / formation identity, consistent across the suite\n"
-        "- **Crash fix** — wells with < 5 production points now show an \"insufficient data\" "
-        "panel instead of erroring the dashboard\n"
-        "- **Bring-your-own-key** — paste your Anthropic key in the sidebar (used only this "
-        "session, never stored); all deterministic analysis works with no key"
+        # Deterministic economics + indicated intervention (the same screen the
+        # field/portfolio ranking uses). Guarded — never crash a single well.
+        diagnosis = intervention = None
+        npv = pi = float("nan")
+        try:
+            pr = screen_well(path)
+            intervention = pr.intervention
+            diagnosis = pr.diagnosis
+            if pr.intervention not in _NON_ECONOMIC:
+                npv = float(pr.npv_usd)
+                pi = float(pr.profitability_index)
+        except Exception:
+            pass
+
+        rows.append({
+            "Well": well.well_id,                 # display id (ED-0NNH)
+            "_key": stem,                          # registry / page key (well_0NN)
+            "Lift": meta.lift,
+            "Lateral (ft)": meta.lateral_length_ft,
+            "Basin·Formation": f"{meta.basin} · {meta.formation}",
+            "Oil BOPD": round(oil, 0) if not np.isnan(oil) else None,
+            "Water cut %": round(wc, 1) if not np.isnan(wc) else None,
+            "GOR scf/bbl": round(gor, 0) if not np.isnan(gor) else None,
+            "Days on prod": days_on if not np.isnan(days_on) else None,
+            "Points": n,
+            "Indicated": intervention or "—",
+            "Diagnosis": diagnosis or ("insufficient data" if n < 5 else "—"),
+            "Risked NPV $": round(npv, 0) if not np.isnan(npv) else None,
+            "PI": round(pi, 2) if not np.isnan(pi) else None,
+        })
+    return pd.DataFrame(rows)
+
+
+# =====================================================================
+# PAGE: Fleet overview
+# =====================================================================
+
+def render_overview() -> None:
+    theme.header(
+        "Production Engineer Copilot",
+        subtitle="AI agent that reviews a fleet of wells — deterministic petroleum-engineering "
+                 "tools + Claude. github.com/diazaeric1-droid/production-engineer-copilot",
+        chips=[(f"v{APP_VERSION}", "ver"), (_eval_chip_text(), "eval"),
+               ("fleet explorer", "info")],
     )
 
-# ---------- guard: wells with too few points can't be decline-fit ------------
-# fit_decline raises ValueError("Need at least 5 valid production points"); some
-# wells (e.g. well_040/well_041) carry only 4 points. Mirror the agent's graceful
-# "insufficient data" path instead of crashing the whole app.
-if len(hist) < 5:
-    st.info(
-        f"**{well.well_id}** has only {len(hist)} production point(s) — too few for a "
-        "hyperbolic decline fit (need ≥ 5) or the full diagnostic dashboard. "
-        "Pick another well, or add production history for this one."
-    )
-    theme.flag("Insufficient production history", "warn")
-    st.stop()
-
-# ---------- compute deterministic analytics once -----------------------------
-
-fit = fit_decline(hist["day"].values, hist["oil_bopd"].values, model="hyperbolic")
-# True type curve: fit early/established decline and extrapolate (not dragged down
-# by the degraded tail like the full-history fit is).
-tc = None
-if analyze_type_curve is not None:
-    try:
-        tc = analyze_type_curve(hist["day"].values, hist["oil_bopd"].values, model="hyperbolic")
-    except Exception:
-        tc = None
-
-latest_oil = float(hist["oil_bopd"].iloc[-1])
-latest_water = float(hist["water_bwpd"].iloc[-1])
-latest_gas = float(hist["gas_mcfd"].iloc[-1])
-days_on = int(hist["day"].iloc[-1])
-
-esp_diag = None
-if well.artificial_lift.get("type") == "ESP" and well.esp_readings:
-    try:
-        esp_diag = evaluate_esp(well.esp_readings, well.artificial_lift["pump_spec"])
-    except Exception:
-        esp_diag = None
-
-# ---------- KPI metrics row --------------------------------------------------
-
-k1, k2, k3, k4, k5 = st.columns(5)
-with k1:
-    tc_ref = tc.type_curve_at_last if tc else fit.last_predicted
-    delta = latest_oil - tc_ref
-    st.metric(
-        "Oil rate (BOPD)",
-        f"{latest_oil:,.0f}",
-        delta=f"{delta:+,.0f} vs type curve",
-        delta_color="normal",
-    )
-with k2:
-    st.metric("Days on production", f"{days_on:,}")
-with k3:
-    wc = latest_water / (latest_water + latest_oil) * 100 if (latest_water + latest_oil) > 0 else 0
-    st.metric("Water cut", f"{wc:.0f}%")
-with k4:
-    glr = latest_gas * 1000 / latest_oil if latest_oil > 0 else 0
-    st.metric("GLR (scf/bbl)", f"{glr:,.0f}")
-with k5:
-    if esp_diag:
-        st.metric(
-            "ESP intake (psi)",
-            f"{esp_diag.intake_pressure_psi:.0f}",
-            delta="IN POR" if esp_diag.in_por else "OUT OF POR",
-            delta_color="off" if esp_diag.in_por else "inverse",
+    with st.expander(f"🆕 What's new in v{APP_VERSION}"):
+        st.markdown(
+            "- **Fleet explorer (multipage)** — a Fleet Overview plus a **drill-down page "
+            "per well** (`st.navigation`): the original well dashboard (decline vs. type "
+            "curve, ESP diagnostics, Monte-Carlo economics, AI review, evals, Generate-AFE).\n"
+            "- **Sortable fleet table** — one deterministic row per well with lift, lateral, "
+            "basin·formation, latest rates, water cut, GOR, days on production, the indicated "
+            "intervention, and risked NPV / capital efficiency from the portfolio screen.\n"
+            "- **Unified Upstream Copilot Suite theme** — dark + navy look with a cross-app "
+            "sidebar **suite navigator** linking the PE, AFE, ESP, Digest, Deferment & Capital apps.\n"
+            "- **Monte-Carlo NPV distribution** — P10/P50/P90 histogram in the Economics tab.\n"
+            "- **Generate AFE** — inline one-page authorization preview + diagnosis-JSON export.\n"
+            "- **Shared fleet registry** — each well carries its Permian field / formation identity.\n"
+            "- **Crash fix** — wells with < 5 production points show an \"insufficient data\" panel."
         )
-    else:
-        st.metric("Lift type", well.artificial_lift.get("type", "—"))
 
-# ---------- tabs -------------------------------------------------------------
+    table = _fleet_table(str(DATA_DIR))
 
-tab_trends, tab_econ, tab_review, tab_evals, tab_raw = st.tabs([
-    "📈 Production Trends",
-    "💰 Economics (Monte-Carlo)",
-    "🤖 AI Review",
-    "🧪 Evals",
-    "📋 Raw Data",
-])
+    # --- fleet snapshot KPIs ------------------------------------------------
+    st.subheader("Fleet snapshot")
+    well_count = len(table)
+    total_oil = table["Oil BOPD"].sum(skipna=True)
+    avg_wc = table["Water cut %"].mean(skipna=True)
+    actionable = table[table["Risked NPV $"].notna()]
+    total_npv = actionable["Risked NPV $"].sum() if not actionable.empty else 0.0
 
-# ---- Tab 1: Production trends ---
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Wells", well_count)
+    k2.metric("Total oil (BOPD)", f"{total_oil:,.0f}")
+    k3.metric("Avg water cut", f"{avg_wc:.0f}%" if pd.notna(avg_wc) else "—")
+    k4.metric("Actionable wells", f"{len(actionable)}")
+    k5, k6, k7 = st.columns(3)
+    avg_lat = table["Lateral (ft)"].mean(skipna=True)
+    k5.metric("Avg lateral (ft)", f"{avg_lat:,.0f}" if pd.notna(avg_lat) else "—")
+    k6.metric("Total risked NPV", f"${total_npv/1e6:,.1f}MM")
+    best_pi = actionable["PI"].max() if not actionable.empty else float("nan")
+    k7.metric("Best capital efficiency (PI)", f"{best_pi:.1f}" if pd.notna(best_pi) else "—")
 
-with tab_trends:
+    # --- sortable fleet table ----------------------------------------------
+    st.subheader("Fleet table")
+    st.caption(
+        "One deterministic row per well — sort any column. **Risked NPV** and **PI** come "
+        "from the portfolio screen (same analyzers the agent uses, no LLM). Open a well from "
+        "the **Wells** section in the sidebar to drill into its full dashboard + AI review.")
+    display = table.drop(columns=["_key"])
+    st.dataframe(
+        display, width="stretch", hide_index=True,
+        column_config={
+            "Risked NPV $": st.column_config.NumberColumn("Risked NPV $", format="$%d"),
+            "Oil BOPD": st.column_config.NumberColumn("Oil BOPD", format="%d"),
+            "GOR scf/bbl": st.column_config.NumberColumn("GOR scf/bbl", format="%d"),
+            "Lateral (ft)": st.column_config.NumberColumn("Lateral (ft)", format="%d"),
+        },
+    )
+
+    # --- top-opportunity bar (deterministic) -------------------------------
+    if not actionable.empty:
+        top = actionable.sort_values("Risked NPV $", ascending=False).head(10)
+        top = top.iloc[::-1]  # largest at top of horizontal bar
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=top["Risked NPV $"] / 1e6, y=top["Well"], orientation="h",
+            marker_color=theme.BLUE,
+            hovertemplate="%{y}: $%{x:.2f}MM risked NPV<extra></extra>",
+        ))
+        fig.update_layout(title="Top intervention opportunities (risked NPV, $MM)",
+                          xaxis_title="Risked NPV ($MM)")
+        st.plotly_chart(theme.style_fig(fig, height=320, legend=False), width="stretch")
+
+    st.caption(
+        "📊 Field/portfolio ranking is also available headless: "
+        "`python -m src.portfolio data/synthetic/well_*.json`.")
+
+
+# =====================================================================
+# PAGE: per-well drill-down (the original single-well dashboard)
+# =====================================================================
+
+def _back_to_overview() -> None:
+    target = globals().get("overview")
+    try:
+        st.page_link(target if target is not None else "app.py",
+                     label="← Back to Fleet overview", icon="📊")
+    except Exception:
+        pass
+
+
+def render_well(path: str) -> None:
+    """The original single-well dashboard for one well JSON path. Behavior is
+    preserved exactly; the BYOK key + run controls live in the page body."""
+    well = _load_well_cached(path)
+    hist = pd.DataFrame(well.production_history)
+
+    # ---- header (title + well meta + eval chip) ----------------------------
+    _well_meta = (
+        f"{well.well_id} · {well.api_number} · {well.field} · "
+        f"{well.completion.get('formation', '—')} · {well.artificial_lift.get('type', '—')} lift"
+        " — github.com/diazaeric1-droid/production-engineer-copilot"
+    )
+    theme.header(
+        f"Production Engineer Copilot · {well.well_id}",
+        subtitle=_well_meta,
+        chips=[(f"v{APP_VERSION}", "ver"), (_eval_chip_text(), "eval")],
+    )
+    _back_to_overview()
+
+    # ---- per-well controls (moved out of the global sidebar) ---------------
+    with st.expander("⚙️ AI well review controls (optional — all charts work without a key)",
+                     expanded=False):
+        cc1, cc2 = st.columns([1, 1])
+        with cc1:
+            byok_key = st.text_input(
+                "🔑 Anthropic API key (optional)", type="password", key=f"byok_{well.well_id}",
+                help="Bring your own key — used only for this session, never stored. Powers the AI "
+                     "well review. Get one at console.anthropic.com. The charts, decline fit, ESP "
+                     "diagnostics, economics, and eval dashboard all work without it.")
+            show_tools = st.checkbox("Show agent tool calls in review", value=True,
+                                     key=f"tools_{well.well_id}")
+        with cc2:
+            run = st.button("Run AI well review", type="primary", width="stretch",
+                            key=f"run_{well.well_id}")
+            st.caption("Review takes ~30 sec and costs ~$0.05 of your own API credit.")
+            st.markdown(
+                "Claude reasons and writes; **deterministic Python tools** do the engineering "
+                "math (Arps decline fit, ESP POR check, NPV/IRR). Engineering numbers stay "
+                "trusted; LLM stays in its lane.")
+
+    # ---- guard: wells with too few points can't be decline-fit -------------
+    # fit_decline raises ValueError("Need at least 5 valid production points"); some
+    # wells (e.g. well_040/well_041) carry only 4 points. Mirror the agent's graceful
+    # "insufficient data" path instead of crashing the whole app.
+    if len(hist) < 5:
+        st.info(
+            f"**{well.well_id}** has only {len(hist)} production point(s) — too few for a "
+            "hyperbolic decline fit (need ≥ 5) or the full diagnostic dashboard. "
+            "Pick another well, or add production history for this one."
+        )
+        theme.flag("Insufficient production history", "warn")
+        return
+
+    # ---- compute deterministic analytics once ------------------------------
+    fit = fit_decline(hist["day"].values, hist["oil_bopd"].values, model="hyperbolic")
+    # True type curve: fit early/established decline and extrapolate (not dragged down
+    # by the degraded tail like the full-history fit is).
+    tc = None
+    if analyze_type_curve is not None:
+        try:
+            tc = analyze_type_curve(hist["day"].values, hist["oil_bopd"].values, model="hyperbolic")
+        except Exception:
+            tc = None
+
+    latest_oil = float(hist["oil_bopd"].iloc[-1])
+    latest_water = float(hist["water_bwpd"].iloc[-1])
+    latest_gas = float(hist["gas_mcfd"].iloc[-1])
+    days_on = int(hist["day"].iloc[-1])
+
+    esp_diag = None
+    if well.artificial_lift.get("type") == "ESP" and well.esp_readings:
+        try:
+            esp_diag = evaluate_esp(well.esp_readings, well.artificial_lift["pump_spec"])
+        except Exception:
+            esp_diag = None
+
+    # ---- KPI metrics row ----------------------------------------------------
+    k1, k2, k3, k4, k5 = st.columns(5)
+    with k1:
+        tc_ref = tc.type_curve_at_last if tc else fit.last_predicted
+        delta = latest_oil - tc_ref
+        st.metric("Oil rate (BOPD)", f"{latest_oil:,.0f}",
+                  delta=f"{delta:+,.0f} vs type curve", delta_color="normal")
+    with k2:
+        st.metric("Days on production", f"{days_on:,}")
+    with k3:
+        wc = latest_water / (latest_water + latest_oil) * 100 if (latest_water + latest_oil) > 0 else 0
+        st.metric("Water cut", f"{wc:.0f}%")
+    with k4:
+        glr = latest_gas * 1000 / latest_oil if latest_oil > 0 else 0
+        st.metric("GLR (scf/bbl)", f"{glr:,.0f}")
+    with k5:
+        if esp_diag:
+            st.metric("ESP intake (psi)", f"{esp_diag.intake_pressure_psi:.0f}",
+                      delta="IN POR" if esp_diag.in_por else "OUT OF POR",
+                      delta_color="off" if esp_diag.in_por else "inverse")
+        else:
+            st.metric("Lift type", well.artificial_lift.get("type", "—"))
+
+    # ---- tabs ---------------------------------------------------------------
+    tab_trends, tab_econ, tab_review, tab_evals, tab_raw = st.tabs([
+        "📈 Production Trends",
+        "💰 Economics (Monte-Carlo)",
+        "🤖 AI Review",
+        "🧪 Evals",
+        "📋 Raw Data",
+    ])
+
+    with tab_trends:
+        _render_trends(well, hist, fit, tc, latest_oil, esp_diag)
+
+    with tab_econ:
+        _render_economics(well)
+
+    with tab_review:
+        if run:
+            try:
+                with st.spinner("Agent reasoning + tool calls…"):
+                    report = run_review(str(path), verbose=show_tools, api_key=byok_key or None)
+                st.markdown(report)
+                st.download_button("⬇ Download review (Markdown)", report,
+                                   file_name=f"{well.well_id}-review.md")
+            except RuntimeError as e:
+                if "ANTHROPIC_API_KEY" in str(e):
+                    st.warning("Enter your **Anthropic API key** in the controls above to generate the "
+                               "AI review. The deterministic analysis — decline fit, ESP diagnostics, "
+                               "economics, and the eval dashboard — works without a key.")
+                else:
+                    raise
+        else:
+            st.info("☝ Open **AI well review controls** above and click **Run AI well review** to "
+                    "generate the agent's full diagnosis and ranked intervention recommendations. The "
+                    "charts already show what the agent's deterministic tools have computed.")
+
+    with tab_evals:
+        _render_evals()
+
+    with tab_raw:
+        st.subheader("Raw well file (JSON)")
+        with open(path) as f:
+            st.json(json.load(f))
+
+    _back_to_overview()
+
+
+def _render_trends(well, hist, fit, tc, latest_oil, esp_diag) -> None:
     col_a, col_b = st.columns([3, 2])
 
     with col_a:
         st.subheader("Production decline vs. hyperbolic type curve")
-
-        # Type-curve line: use the early-window type curve when available (it reflects
-        # what the well *should* be doing); fall back to the full fit otherwise.
         days_dense = np.linspace(hist["day"].min(), hist["day"].max(), 100)
         curve_qi, curve_di, curve_b = (
             (tc.qi, tc.di, tc.b) if tc else (fit.qi, fit.di, fit.b)
@@ -232,29 +416,17 @@ with tab_trends:
 
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=hist["day"], y=hist["oil_bopd"],
-            mode="markers+lines", name="Actual oil rate",
-            marker=dict(size=10, color=theme.BLUE),
-            line=dict(color=theme.BLUE, width=2),
-        ))
+            x=hist["day"], y=hist["oil_bopd"], mode="markers+lines", name="Actual oil rate",
+            marker=dict(size=10, color=theme.BLUE), line=dict(color=theme.BLUE, width=2)))
         fig.add_trace(go.Scatter(
-            x=days_dense, y=fit_curve,
-            mode="lines", name=tc_label,
-            line=dict(color=theme.AMBER, width=2, dash="dash"),
-        ))
-        # Highlight the last actual point
+            x=days_dense, y=fit_curve, mode="lines", name=tc_label,
+            line=dict(color=theme.AMBER, width=2, dash="dash")))
         fig.add_trace(go.Scatter(
-            x=[hist["day"].iloc[-1]], y=[latest_oil],
-            mode="markers", name="Today",
+            x=[hist["day"].iloc[-1]], y=[latest_oil], mode="markers", name="Today",
             marker=dict(size=18, color=theme.RED if today_below else theme.GREEN,
-                       symbol="circle-open", line=dict(width=3)),
-            showlegend=False,
-        ))
-        fig.update_layout(
-            xaxis_title="Days on production",
-            yaxis_title="Oil rate (BOPD)",
-            hovermode="x unified",
-        )
+                       symbol="circle-open", line=dict(width=3)), showlegend=False))
+        fig.update_layout(xaxis_title="Days on production", yaxis_title="Oil rate (BOPD)",
+                          hovermode="x unified")
         st.plotly_chart(theme.style_fig(fig, height=380), width="stretch")
 
     with col_b:
@@ -271,8 +443,7 @@ with tab_trends:
         if tc is None:
             st.markdown(
                 "<div style='color:#aaa; font-size:0.85rem;'>Not enough history for a "
-                "type-curve benchmark.</div>", unsafe_allow_html=True,
-            )
+                "type-curve benchmark.</div>", unsafe_allow_html=True)
         else:
             deviation = tc.deviation_pct
             deferred_note = (
@@ -284,18 +455,15 @@ with tab_trends:
             if deviation < -10:
                 st.markdown(
                     f"<div class='flag-high'>⚠ Underperforming type curve by {abs(deviation):.0f}%</div>"
-                    f"{deferred_note}", unsafe_allow_html=True,
-                )
+                    f"{deferred_note}", unsafe_allow_html=True)
             elif deviation > 10:
                 st.markdown(
                     f"<div class='flag-ok'>✓ Outperforming type curve by {deviation:.0f}%</div>"
-                    f"{deferred_note}", unsafe_allow_html=True,
-                )
+                    f"{deferred_note}", unsafe_allow_html=True)
             else:
                 st.markdown(
                     f"<div class='flag-ok'>✓ On type curve ({deviation:+.1f}%)</div>"
-                    f"{deferred_note}", unsafe_allow_html=True,
-                )
+                    f"{deferred_note}", unsafe_allow_html=True)
 
     # ESP diagnostic multi-panel
     if esp_diag and well.esp_readings:
@@ -307,126 +475,96 @@ with tab_trends:
 
         fig_esp = make_subplots(
             rows=2, cols=2, subplot_titles=(
-                "BFPD vs. POR window",
-                "Intake pressure (psi)",
-                "Motor temp (°F)",
-                "Motor amps (A)",
-            ),
-            vertical_spacing=0.18, horizontal_spacing=0.10,
-        )
-        # BFPD with POR shaded band
+                "BFPD vs. POR window", "Intake pressure (psi)",
+                "Motor temp (°F)", "Motor amps (A)"),
+            vertical_spacing=0.18, horizontal_spacing=0.10)
         fig_esp.add_trace(go.Scatter(
             x=readings["date"], y=readings["bfpd"], mode="lines+markers",
             line=dict(color=theme.BLUE, width=2), marker=dict(size=8),
-            showlegend=False,
-        ), row=1, col=1)
-        fig_esp.add_hrect(
-            y0=esp_diag.por_min_bfpd, y1=esp_diag.por_max_bfpd,
-            fillcolor=theme.GREEN, opacity=0.15, line_width=0, row=1, col=1,
-        )
-        # Intake
+            showlegend=False), row=1, col=1)
+        fig_esp.add_hrect(y0=esp_diag.por_min_bfpd, y1=esp_diag.por_max_bfpd,
+                          fillcolor=theme.GREEN, opacity=0.15, line_width=0, row=1, col=1)
         intake_color = theme.RED if readings["intake_pressure_psi"].iloc[-1] < 50 else theme.BLUE
         fig_esp.add_trace(go.Scatter(
-            x=readings["date"], y=readings["intake_pressure_psi"],
-            mode="lines+markers", line=dict(color=intake_color, width=2),
-            marker=dict(size=8), showlegend=False,
-        ), row=1, col=2)
+            x=readings["date"], y=readings["intake_pressure_psi"], mode="lines+markers",
+            line=dict(color=intake_color, width=2), marker=dict(size=8),
+            showlegend=False), row=1, col=2)
         fig_esp.add_hline(y=50, line_dash="dash", line_color=theme.AMBER, row=1, col=2)
-        # Motor temp
         temp_color = theme.RED if readings["motor_temp_f"].iloc[-1] > 320 else theme.BLUE
         fig_esp.add_trace(go.Scatter(
-            x=readings["date"], y=readings["motor_temp_f"],
-            mode="lines+markers", line=dict(color=temp_color, width=2),
-            marker=dict(size=8), showlegend=False,
-        ), row=2, col=1)
-        # Motor amps with nameplate reference
+            x=readings["date"], y=readings["motor_temp_f"], mode="lines+markers",
+            line=dict(color=temp_color, width=2), marker=dict(size=8),
+            showlegend=False), row=2, col=1)
         nameplate = well.artificial_lift["pump_spec"].get("motor_amps_nameplate", 0)
         amp_color = theme.RED if readings["motor_amps"].iloc[-1] > nameplate * 1.15 else theme.BLUE
         fig_esp.add_trace(go.Scatter(
-            x=readings["date"], y=readings["motor_amps"],
-            mode="lines+markers", line=dict(color=amp_color, width=2),
-            marker=dict(size=8), showlegend=False,
-        ), row=2, col=2)
+            x=readings["date"], y=readings["motor_amps"], mode="lines+markers",
+            line=dict(color=amp_color, width=2), marker=dict(size=8),
+            showlegend=False), row=2, col=2)
         if nameplate:
             fig_esp.add_hline(y=nameplate, line_dash="dash", line_color=theme.AMBER,
                               annotation_text="Nameplate", row=2, col=2)
         fig_esp.update_layout(showlegend=False)
         st.plotly_chart(theme.style_fig(fig_esp, height=380, legend=False), width="stretch")
 
-        # Flag badges
         if esp_diag.flags:
             flag_html = " ".join(f"<div class='flag-high'>⚠ {f}</div>" for f in esp_diag.flags)
             st.markdown(f"**Active ESP flags:** {flag_html}", unsafe_allow_html=True)
         else:
-            st.markdown(
-                "<div class='flag-ok'>✓ ESP operating within all thresholds</div>",
-                unsafe_allow_html=True,
-            )
+            st.markdown("<div class='flag-ok'>✓ ESP operating within all thresholds</div>",
+                        unsafe_allow_html=True)
 
-# ---- Economics: Monte-Carlo intervention economics ---
 
-with tab_econ:
+def _render_economics(well) -> None:
     st.subheader("Monte-Carlo intervention economics")
     st.caption(
         "Runs ~10,000 trials over uncertain inputs — incremental rate (lognormal ±30%), "
         "uplift decline (±0.15 abs), realized price (sd ~$12) — through the same NPV math "
-        "the agent's deterministic tool uses. P10 = optimistic, P90 = conservative."
-    )
+        "the agent's deterministic tool uses. P10 = optimistic, P90 = conservative.")
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        mc_name = st.text_input("Intervention", value="Acid stimulation")
-        mc_cost = st.number_input("Treatment cost ($)", value=150_000, step=10_000, min_value=1_000)
+        mc_name = st.text_input("Intervention", value="Acid stimulation", key=f"mcn_{well.well_id}")
+        mc_cost = st.number_input("Treatment cost ($)", value=150_000, step=10_000, min_value=1_000,
+                                  key=f"mcc_{well.well_id}")
     with c2:
-        mc_rate = st.number_input("Incremental rate (BOPD)", value=120.0, step=10.0, min_value=0.0)
-        mc_decline = st.number_input("Uplift decline (/yr)", value=0.6, step=0.05, min_value=0.0)
+        mc_rate = st.number_input("Incremental rate (BOPD)", value=120.0, step=10.0, min_value=0.0,
+                                  key=f"mcr_{well.well_id}")
+        mc_decline = st.number_input("Uplift decline (/yr)", value=0.6, step=0.05, min_value=0.0,
+                                     key=f"mcd_{well.well_id}")
     with c3:
-        mc_price = st.number_input("Realized price ($/bbl)", value=65.0, step=1.0, min_value=1.0)
-        mc_trials = st.select_slider("Trials", options=[1_000, 5_000, 10_000, 20_000], value=10_000)
+        mc_price = st.number_input("Realized price ($/bbl)", value=65.0, step=1.0, min_value=1.0,
+                                   key=f"mcp_{well.well_id}")
+        mc_trials = st.select_slider("Trials", options=[1_000, 5_000, 10_000, 20_000], value=10_000,
+                                     key=f"mct_{well.well_id}")
 
     sim = simulate_intervention(
-        name=mc_name,
-        treatment_cost_usd=float(mc_cost),
-        incremental_rate_bopd=float(mc_rate),
-        uplift_decline_per_yr=float(mc_decline),
-        realized_price_per_bbl=float(mc_price),
-        n_trials=int(mc_trials),
-        seed=42,
-    )
+        name=mc_name, treatment_cost_usd=float(mc_cost), incremental_rate_bopd=float(mc_rate),
+        uplift_decline_per_yr=float(mc_decline), realized_price_per_bbl=float(mc_price),
+        n_trials=int(mc_trials), seed=42)
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("P90 NPV (conservative)", f"${sim['npv_p90_usd']/1e6:,.2f}MM")
     m2.metric("P50 NPV (median)", f"${sim['npv_p50_usd']/1e6:,.2f}MM")
     m3.metric("P10 NPV (optimistic)", f"${sim['npv_p10_usd']/1e6:,.2f}MM")
-    m4.metric(
-        "P(payout)",
-        f"{sim['probability_of_payout']*100:.0f}%",
-        help=f"Fraction of trials with NPV>0 AND payout < {sim['payout_cutoff_months']:.0f} months",
-    )
+    m4.metric("P(payout)", f"{sim['probability_of_payout']*100:.0f}%",
+              help=f"Fraction of trials with NPV>0 AND payout < {sim['payout_cutoff_months']:.0f} months")
 
-    # Monte-Carlo NPV distribution: the full spread the P10/P50/P90 summarize.
-    npv_samples = sim["npv_samples"] / 1e6  # plot in $MM
+    npv_samples = sim["npv_samples"] / 1e6
     fig_dist = go.Figure()
-    fig_dist.add_trace(go.Histogram(
-        x=npv_samples, nbinsx=60, marker=dict(color=theme.BLUE),
-        name="NPV trials", showlegend=False,
-    ))
+    fig_dist.add_trace(go.Histogram(x=npv_samples, nbinsx=60, marker=dict(color=theme.BLUE),
+                                    name="NPV trials", showlegend=False))
     for x_usd, color, tag in (
         (sim["npv_p90_usd"], theme.RED, "P90"),
         (sim["npv_p50_usd"], theme.BLUE, "P50"),
         (sim["npv_p10_usd"], theme.GREEN, "P10"),
     ):
-        fig_dist.add_vline(
-            x=x_usd / 1e6, line_dash="dash", line_color=color,
-            annotation_text=tag, annotation_position="top",
-        )
-    fig_dist.update_layout(
-        title="Monte-Carlo NPV distribution",
-        xaxis_title="NPV ($MM)", yaxis_title="Trials",
-    )
+        fig_dist.add_vline(x=x_usd / 1e6, line_dash="dash", line_color=color,
+                           annotation_text=tag, annotation_position="top")
+    fig_dist.update_layout(title="Monte-Carlo NPV distribution",
+                           xaxis_title="NPV ($MM)", yaxis_title="Trials")
     st.plotly_chart(theme.style_fig(fig_dist, height=300, legend=False), width="stretch")
 
-    # Tornado chart (one-at-a-time low/high NPV swing per variable, sorted by swing).
     tdata = sim["tornado"]
     base_npv = sim["npv_p50_usd"]
     order = sorted(tdata, key=lambda k: tdata[k]["swing"])
@@ -441,24 +579,16 @@ with tab_econ:
         lo, hi = d["low_npv"], d["high_npv"]
         left, right = min(lo, hi), max(lo, hi)
         fig_t.add_trace(go.Bar(
-            y=[labels.get(var, var)],
-            x=[right - left],
-            base=[left],
-            orientation="h",
-            marker=dict(color=theme.BLUE),
-            showlegend=False,
+            y=[labels.get(var, var)], x=[right - left], base=[left], orientation="h",
+            marker=dict(color=theme.BLUE), showlegend=False,
             hovertemplate=(
                 f"{labels.get(var, var)}<br>"
                 f"low NPV: ${left/1e6:,.2f}MM<br>high NPV: ${right/1e6:,.2f}MM<br>"
-                f"swing: ${d['swing']/1e6:,.2f}MM<extra></extra>"
-            ),
-        ))
+                f"swing: ${d['swing']/1e6:,.2f}MM<extra></extra>")))
     fig_t.add_vline(x=base_npv, line_dash="dash", line_color=theme.AMBER,
                     annotation_text="P50", annotation_position="top")
-    fig_t.update_layout(
-        title="Tornado — NPV sensitivity (one-at-a-time)",
-        xaxis_title="NPV ($)", bargap=0.4,
-    )
+    fig_t.update_layout(title="Tornado — NPV sensitivity (one-at-a-time)",
+                        xaxis_title="NPV ($)", bargap=0.4)
     st.plotly_chart(theme.style_fig(fig_t, height=300, legend=False), width="stretch")
 
     verdict = (
@@ -471,25 +601,23 @@ with tab_econ:
         f"<div class='{chip}'>Risk verdict: {verdict}</div> "
         f"<span style='color:#aaa; font-size:0.85rem;'>"
         f"mean NPV ${sim['npv_mean_usd']/1e6:,.2f}MM over {sim['n_trials']:,} trials</span>",
-        unsafe_allow_html=True,
-    )
+        unsafe_allow_html=True)
 
-    # ---- AFE-Copilot chaining export -----------------------------------------
+    # ---- AFE-Copilot chaining export ---------------------------------------
     st.divider()
     st.markdown("##### ⬇ Export AFE diagnosis (for AFE-Copilot)")
     st.caption(
         "Emits a validated JSON object matching AFE-Copilot's AFEDiagnosis schema — "
-        "the pe→afe chain. Pick the canonical intervention; identity fields come from the well."
-    )
+        "the pe→afe chain. Pick the canonical intervention; identity fields come from the well.")
     af1, af2 = st.columns(2)
     with af1:
         afe_interv = st.selectbox("Intervention (AFE key)", AFE_INTERVENTIONS,
-                                  index=AFE_INTERVENTIONS.index("acid_stimulation"))
+                                  index=AFE_INTERVENTIONS.index("acid_stimulation"),
+                                  key=f"afei_{well.well_id}")
     with af2:
-        afe_diag = st.text_input(
-            "Primary diagnosis",
-            value="Below type curve; mechanical degradation indicated",
-        )
+        afe_diag = st.text_input("Primary diagnosis",
+                                 value="Below type curve; mechanical degradation indicated",
+                                 key=f"afed_{well.well_id}")
     try:
         afe_obj = export_afe_diagnosis(well, {
             "intervention": afe_interv,
@@ -501,37 +629,29 @@ with tab_econ:
             "⬇ Export AFE diagnosis (for AFE-Copilot)",
             data=json.dumps(afe_obj, indent=2),
             file_name=f"{well.well_id}-afe-diagnosis.json",
-            mime="application/json",
-        )
+            mime="application/json", key=f"afedl_{well.well_id}")
         with st.expander("Preview AFE diagnosis JSON"):
             st.json(afe_obj)
     except ValueError as e:
         st.warning(f"Cannot build AFE diagnosis: {e}")
 
-    # ---- In-app AFE authorization preview (closes diagnose -> authorize) -----
+    # ---- In-app AFE authorization preview ----------------------------------
     st.divider()
     st.markdown("##### 📝 Authorize — generate AFE preview")
     st.caption(
         "Closes the diagnose→authorize loop in-app: a one-page AFE authorization "
         "preview from the selected intervention's calibrated cost (no cross-service "
         "call, no API key). Routes the $ amount to the required approver, then open "
-        "the AFE Copilot to draft & track the full authorization."
-    )
-    if st.button("Generate AFE", type="primary", key="gen_afe"):
-        st.session_state["_show_afe"] = True
-    if st.session_state.get("_show_afe"):
-        # Deterministic net economics for the selected AFE intervention using its
-        # calibrated cost + the engineer's rate/decline inputs above.
+        "the AFE Copilot to draft & track the full authorization.")
+    if st.button("Generate AFE", type="primary", key=f"gen_afe_{well.well_id}"):
+        st.session_state[f"_show_afe_{well.well_id}"] = True
+    if st.session_state.get(f"_show_afe_{well.well_id}"):
         afe_defaults = A.intervention_defaults(afe_interv)
         afe_cost = float(afe_defaults["cost_usd"]) if afe_defaults else float(mc_cost)
         afe_econ_obj = evaluate_intervention(
-            name=afe_interv,
-            treatment_cost_usd=afe_cost,
-            incremental_rate_bopd=float(mc_rate),
-            uplift_decline_per_yr=float(mc_decline),
-            realized_price_per_bbl=float(mc_price),
-            prob_success=(afe_defaults["p_success"] if afe_defaults else 1.0),
-        )
+            name=afe_interv, treatment_cost_usd=afe_cost, incremental_rate_bopd=float(mc_rate),
+            uplift_decline_per_yr=float(mc_decline), realized_price_per_bbl=float(mc_price),
+            prob_success=(afe_defaults["p_success"] if afe_defaults else 1.0))
         afe_econ = {
             "npv_10pct_usd": afe_econ_obj.npv_10pct_usd,
             "payout_months": afe_econ_obj.payout_months,
@@ -550,20 +670,16 @@ with tab_econ:
         else:
             ci1, ci2, ci3 = st.columns(3)
             ci1.metric("Gross AFE estimate", f"${preview['gross_cost_usd']/1e3:,.0f}K")
-            ci2.metric("Tangible (capitalized)",
-                       f"${preview['tangible_cost_usd']/1e3:,.0f}K",
+            ci2.metric("Tangible (capitalized)", f"${preview['tangible_cost_usd']/1e3:,.0f}K",
                        help=f"{preview['tangible_pct']*100:.0f}% of gross — capitalized equipment")
-            ci3.metric("Intangible (IDC)",
-                       f"${preview['intangible_cost_usd']/1e3:,.0f}K",
+            ci3.metric("Intangible (IDC)", f"${preview['intangible_cost_usd']/1e3:,.0f}K",
                        help="Intangible drilling/service cost — deductible in-year")
 
             ne1, ne2, ne3 = st.columns(3)
             npv = preview.get("net_npv_usd")
-            ne1.metric("Net risked NPV @10%",
-                       f"${npv/1e6:,.2f}MM" if npv is not None else "—")
+            ne1.metric("Net risked NPV @10%", f"${npv/1e6:,.2f}MM" if npv is not None else "—")
             payout = preview.get("payout_months")
-            ne2.metric("Payout",
-                       f"{payout:.0f} mo" if payout is not None and payout != float("inf")
+            ne2.metric("Payout", f"{payout:.0f} mo" if payout is not None and payout != float("inf")
                        else "no payout")
             pi = preview.get("profitability_index")
             ne3.metric("Profitability index", f"{pi:.2f}" if pi is not None else "—")
@@ -571,8 +687,7 @@ with tab_econ:
             theme.flag(
                 f"Authority routing: {preview['recommended_approver']} "
                 f"(gross ${preview['gross_cost_usd']:,.0f})",
-                "ok" if (npv is not None and npv > 0) else "warn",
-            )
+                "ok" if (npv is not None and npv > 0) else "warn")
             st.caption(preview["authority_basis"])
             with st.expander("AFE preview detail (line items + identity)"):
                 st.json(preview)
@@ -580,45 +695,16 @@ with tab_econ:
         st.markdown(
             "🔗 [Open in AFE Copilot](https://diazaeric1-afe-copilot.hf.space) "
             "to draft & track the full authorization (WI/NRI net economics, JIB "
-            "allocation, risk register, audit trail)."
-        )
+            "allocation, risk register, audit trail).")
 
 
-# ---- Tab 2: AI review ---
-
-with tab_review:
-    if run:
-        try:
-            with st.spinner("Agent reasoning + tool calls…"):
-                report = run_review(str(chosen), verbose=show_tools, api_key=byok_key or None)
-            st.markdown(report)
-            st.download_button(
-                "⬇ Download review (Markdown)",
-                report,
-                file_name=f"{well.well_id}-review.md",
-            )
-        except RuntimeError as e:
-            if "ANTHROPIC_API_KEY" in str(e):
-                st.warning("Enter your **Anthropic API key** in the sidebar to generate the AI review. "
-                           "The deterministic analysis — decline fit, ESP diagnostics, economics, "
-                           "and the eval dashboard — works without a key.")
-            else:
-                raise
-    else:
-        st.info("👈 Click **Run AI well review** in the sidebar to generate the agent's full diagnosis "
-                "and ranked intervention recommendations. The charts to the left already show what the "
-                "agent's deterministic tools have computed.")
-
-# ---- Evals dashboard (static files, no API) ---
-
-with tab_evals:
+def _render_evals() -> None:
     st.subheader("Eval dashboard — 41-case dev + blind holdout")
     st.caption(
         "Reads the committed eval artifacts (evals/results/summary.json, holdout/summary_holdout.json, "
         "case_*.md). No API calls — this is the checked-in baseline the CI regression gate guards. "
         "Wells are de-leaked (the answer is not in the data); the holdout is a blind set the prompt "
-        "was not tuned on."
-    )
+        "was not tuned on.")
 
     EVAL_RESULTS = REPO_ROOT / "evals" / "results"
     summary_path = EVAL_RESULTS / "summary.json"
@@ -641,110 +727,110 @@ with tab_evals:
     holdout = _agreement(EVAL_RESULTS / "holdout" / "summary_holdout.json")
 
     if not summary_path.exists():
-        st.info(
-            "No eval summary found at `evals/results/summary.json`. "
-            "Run `python -m evals.run_evals` to generate it."
-        )
+        st.info("No eval summary found at `evals/results/summary.json`. "
+                "Run `python -m evals.run_evals` to generate it.")
+        return
+
+    try:
+        rows = json.loads(summary_path.read_text())
+    except Exception as e:
+        rows = None
+        st.warning(f"Could not parse summary.json: {e}")
+
+    if not rows:
+        return
+
+    scored = [r for r in rows if "recommendation_match" in r]
+    n = len(scored) if scored else len(rows)
+    rec_hits = sum(1 for r in scored if r.get("recommendation_match"))
+    agreement = rec_hits / n if n else 0.0
+    kw_vals = [r["keyword_hit_rate"] for r in rows if "keyword_hit_rate" in r]
+    kw_rate = sum(kw_vals) / len(kw_vals) if kw_vals else 0.0
+    errors = [r for r in rows if "error" in r]
+
+    e1, e2, e3, e4 = st.columns(4)
+    e1.metric("Dev agreement", f"{agreement*100:.0f}%", f"{rec_hits}/{n}")
+    if holdout:
+        e2.metric("Blind holdout agreement", f"{holdout['agree']*100:.0f}%",
+                  f"{holdout['hits']}/{holdout['n']}",
+                  help="The credible number — a held-out set the prompt was not tuned on.")
     else:
-        try:
-            rows = json.loads(summary_path.read_text())
-        except Exception as e:
-            rows = None
-            st.warning(f"Could not parse summary.json: {e}")
+        e2.metric("Keyword hit rate", f"{kw_rate*100:.0f}%")
+    e3.metric("Keyword hit rate", f"{kw_rate*100:.0f}%")
+    e4.metric("Cases", f"{len(rows)}" + (f" + {holdout['n']} blind" if holdout else ""))
 
-        if rows:
-            scored = [r for r in rows if "recommendation_match" in r]
-            n = len(scored) if scored else len(rows)
-            rec_hits = sum(1 for r in scored if r.get("recommendation_match"))
-            agreement = rec_hits / n if n else 0.0
-            kw_vals = [r["keyword_hit_rate"] for r in rows if "keyword_hit_rate" in r]
-            kw_rate = sum(kw_vals) / len(kw_vals) if kw_vals else 0.0
-            errors = [r for r in rows if "error" in r]
+    if errors:
+        st.warning(f"{len(errors)} case(s) errored during the last run.")
 
-            e1, e2, e3, e4 = st.columns(4)
-            e1.metric("Dev agreement", f"{agreement*100:.0f}%", f"{rec_hits}/{n}")
-            if holdout:
-                e2.metric("Blind holdout agreement", f"{holdout['agree']*100:.0f}%",
-                          f"{holdout['hits']}/{holdout['n']}",
-                          help="The credible number — a held-out set the prompt was not tuned on.")
-            else:
-                e2.metric("Keyword hit rate", f"{kw_rate*100:.0f}%")
-            e3.metric("Keyword hit rate", f"{kw_rate*100:.0f}%")
-            e4.metric("Cases", f"{len(rows)}" + (f" + {holdout['n']} blind" if holdout else ""))
+    st.markdown("##### Per-class recommendation agreement")
+    cls = {}
+    for r in scored:
+        c = cls.setdefault(r.get("expected", "—"), [0, 0])
+        c[1] += 1
+        c[0] += int(bool(r.get("recommendation_match")))
+    cls_df = pd.DataFrame(
+        [{"expected class": k, "agreement": f"{h/n2*100:.0f}%", "n": n2}
+         for k, (h, n2) in sorted(cls.items(), key=lambda kv: kv[1][0] / kv[1][1])])
+    st.dataframe(cls_df, width="stretch", hide_index=True)
 
-            if errors:
-                st.warning(f"{len(errors)} case(s) errored during the last run.")
+    st.markdown("##### Per-case results")
+    table_rows = []
+    for r in rows:
+        table_rows.append({
+            "case": r.get("id", "—"),
+            "notes": r.get("notes", ""),
+            "expected": r.get("expected", "—"),
+            "keyword_hit": (f"{r['keyword_hit_rate']*100:.0f}%" if "keyword_hit_rate" in r else "—"),
+            "recommendation": (
+                "✅ pass" if r.get("recommendation_match")
+                else "❌ miss" if "recommendation_match" in r
+                else ("⚠ error" if "error" in r else "—")),
+        })
+    st.dataframe(pd.DataFrame(table_rows), width="stretch", hide_index=True)
 
-            # Per-class agreement (where systematic confusions would hide).
-            st.markdown("##### Per-class recommendation agreement")
-            cls = {}
-            for r in scored:
-                c = cls.setdefault(r.get("expected", "—"), [0, 0])
-                c[1] += 1
-                c[0] += int(bool(r.get("recommendation_match")))
-            cls_df = pd.DataFrame(
-                [{"expected class": k, "agreement": f"{h/n2*100:.0f}%", "n": n2}
-                 for k, (h, n2) in sorted(cls.items(), key=lambda kv: kv[1][0] / kv[1][1])]
-            )
-            st.dataframe(cls_df, width="stretch", hide_index=True)
+    st.markdown("##### Recommendation breakdown (expected → pass / miss)")
+    conf = {}
+    for r in scored:
+        exp = r.get("expected", "—")
+        bucket = conf.setdefault(exp, {"pass": 0, "miss": 0})
+        bucket["pass" if r.get("recommendation_match") else "miss"] += 1
+    if conf:
+        conf_df = pd.DataFrame([
+            {"expected": k, "pass": v["pass"], "miss": v["miss"], "n": v["pass"] + v["miss"]}
+            for k, v in sorted(conf.items())])
+        st.dataframe(conf_df, width="stretch", hide_index=True)
+        misses = conf_df[conf_df["miss"] > 0]
+        if not misses.empty:
+            st.caption("Outstanding misses concentrate in: " + ", ".join(misses["expected"].tolist()))
+    else:
+        st.caption("No recommendation_match field in summary rows — breakdown unavailable.")
 
-            # Per-case pass/fail table
-            st.markdown("##### Per-case results")
-            table_rows = []
-            for r in rows:
-                table_rows.append({
-                    "case": r.get("id", "—"),
-                    "notes": r.get("notes", ""),
-                    "expected": r.get("expected", "—"),
-                    "keyword_hit": (
-                        f"{r['keyword_hit_rate']*100:.0f}%" if "keyword_hit_rate" in r else "—"
-                    ),
-                    "recommendation": (
-                        "✅ pass" if r.get("recommendation_match")
-                        else "❌ miss" if "recommendation_match" in r
-                        else ("⚠ error" if "error" in r else "—")
-                    ),
-                })
-            st.dataframe(pd.DataFrame(table_rows), width="stretch", hide_index=True)
-
-            # Confusion-style breakdown: expected recommendation -> pass / miss counts.
-            st.markdown("##### Recommendation breakdown (expected → pass / miss)")
-            conf = {}
-            for r in scored:
-                exp = r.get("expected", "—")
-                bucket = conf.setdefault(exp, {"pass": 0, "miss": 0})
-                bucket["pass" if r.get("recommendation_match") else "miss"] += 1
-            if conf:
-                conf_df = pd.DataFrame([
-                    {"expected": k, "pass": v["pass"], "miss": v["miss"],
-                     "n": v["pass"] + v["miss"]}
-                    for k, v in sorted(conf.items())
-                ])
-                st.dataframe(conf_df, width="stretch", hide_index=True)
-                misses = conf_df[conf_df["miss"] > 0]
-                if not misses.empty:
-                    st.caption(
-                        "Outstanding misses concentrate in: "
-                        + ", ".join(misses["expected"].tolist())
-                    )
-            else:
-                st.caption("No recommendation_match field in summary rows — breakdown unavailable.")
-
-            # Drill into a single case report (case_*.md)
-            st.markdown("##### Case report")
-            case_ids = [r.get("id") for r in rows if r.get("id")]
-            if case_ids:
-                pick = st.selectbox("View a case report", case_ids)
-                md_path = EVAL_RESULTS / f"{pick}.md"
-                if md_path.exists():
-                    st.markdown(md_path.read_text())
-                else:
-                    st.info(f"No saved report for {pick} (expected `{md_path.name}`).")
+    st.markdown("##### Case report")
+    case_ids = [r.get("id") for r in rows if r.get("id")]
+    if case_ids:
+        pick = st.selectbox("View a case report", case_ids)
+        md_path = EVAL_RESULTS / f"{pick}.md"
+        if md_path.exists():
+            st.markdown(md_path.read_text())
+        else:
+            st.info(f"No saved report for {pick} (expected `{md_path.name}`).")
 
 
-# ---- Tab 3: Raw data ---
+# =====================================================================
+# Shared setup (runs every rerun) + navigation
+# =====================================================================
 
-with tab_raw:
-    st.subheader("Raw well file (JSON)")
-    with open(chosen) as f:
-        st.json(json.load(f))
+theme.setup_page("Production Engineer Copilot", icon="⛽")
+theme.suite_nav("pe-copilot")
+
+_paths = _well_files(str(DATA_DIR))
+if not _paths:
+    st.error("No well files found in data/synthetic/")
+    st.stop()
+
+overview = st.Page(render_overview, title="Fleet overview", icon="📊", default=True)
+wells = [
+    st.Page(partial(render_well, p), title=Path(p).stem, url_path=Path(p).stem)
+    for p in _paths
+]
+st.navigation({"Fleet": [overview], "Wells": wells}).run()
