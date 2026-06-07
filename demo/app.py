@@ -280,7 +280,23 @@ def render_overview(source: str, ndic_wells: list[WellFile] | None, detail: str)
     )
     theme.data_badge(source, detail)
 
-    with st.expander(f"🆕 What's new in v{APP_VERSION}"):
+    theme.how_to(
+        "- **What this is** — an AI agent that reviews a fleet of wells: deterministic "
+        "petroleum-engineering tools (Arps decline fit, type curve, ESP POR check, "
+        "risked NPV) compute the numbers; Claude reasons over them and writes a one-page "
+        "review. Every chart works with no API key.\n"
+        "- **Data source toggle (sidebar)** — switch between **real Colorado ECMC** public "
+        "monthly records (DJ Basin Niobrara/Codell; the free default) and **synthetic** "
+        "wells with known ground truth + full ESP telemetry. Real monthly filings carry no "
+        "ESP signals, so the ESP diagnostic panel is skipped on those wells.\n"
+        "- **Fleet table** — one deterministic row per well; sort any column. **Diagnosis** "
+        "is the indicated problem, **Indicated** is the suggested intervention, and **Risked "
+        "NPV / PI** come from the portfolio screen (the same analyzers the agent uses).\n"
+        "- **Drill into a well** — open any well from the **Wells** section in the sidebar "
+        "for its decline vs. type curve, ESP diagnostics, Monte-Carlo economics, and AI review."
+    )
+
+    with st.expander(f"🆕 What's New in v{APP_VERSION}"):
         st.markdown(
             "- **Fleet explorer (multipage)** — a Fleet Overview plus a **drill-down page "
             "per well** (`st.navigation`): the original well dashboard (decline vs. type "
@@ -302,7 +318,7 @@ def render_overview(source: str, ndic_wells: list[WellFile] | None, detail: str)
         return
 
     # --- fleet snapshot KPIs ------------------------------------------------
-    st.subheader("Fleet snapshot")
+    st.subheader("Fleet Snapshot")
     well_count = len(table)
     total_oil = table["Oil BOPD"].sum(skipna=True)
     avg_wc = table["Water cut %"].mean(skipna=True)
@@ -322,7 +338,7 @@ def render_overview(source: str, ndic_wells: list[WellFile] | None, detail: str)
     k7.metric("Best capital efficiency (PI)", f"{best_pi:.1f}" if pd.notna(best_pi) else "—")
 
     # --- sortable fleet table ----------------------------------------------
-    st.subheader("Fleet table")
+    st.subheader("Fleet Table")
     st.caption(
         "One deterministic row per well — sort any column. **Risked NPV** and **PI** come "
         "from the portfolio screen (same analyzers the agent uses, no LLM). Open a well from "
@@ -348,13 +364,18 @@ def render_overview(source: str, ndic_wells: list[WellFile] | None, detail: str)
             marker_color=theme.BLUE,
             hovertemplate="%{y}: $%{x:.2f}MM risked NPV<extra></extra>",
         ))
-        fig.update_layout(title="Top intervention opportunities (risked NPV, $MM)",
+        fig.update_layout(title="Top Intervention Opportunities (Risked NPV, $MM)",
                           xaxis_title="Risked NPV ($MM)")
         st.plotly_chart(theme.style_fig(fig, height=320, legend=False), width="stretch")
+        theme.source_note(
+            "Risked NPV = discounted-cash-flow NPV of the indicated intervention × "
+            "chance-of-success, from the deterministic portfolio screen; values in $MM.")
 
     st.caption(
         "📊 Field/portfolio ranking is also available headless: "
         "`python -m src.portfolio data/synthetic/well_*.json`.")
+
+    theme.references(["npv"])
 
 
 # =====================================================================
@@ -403,7 +424,7 @@ def render_well(well: WellFile, *, source: str = "synthetic", detail: str = "",
     _back_to_overview()
 
     # ---- per-well controls (moved out of the global sidebar) ---------------
-    with st.expander("⚙️ AI well review controls (optional — all charts work without a key)",
+    with st.expander("⚙️ AI Well Review Controls (optional — all charts work without a key)",
                      expanded=False):
         cc1, cc2 = st.columns([1, 1])
         with cc1:
@@ -540,14 +561,14 @@ def render_well(well: WellFile, *, source: str = "synthetic", detail: str = "",
 
     with tab_raw:
         if raw_path is not None:
-            st.subheader("Raw well file (JSON)")
+            st.subheader("Raw Well File (JSON)")
             with open(raw_path) as f:
                 st.json(json.load(f))
         else:
             # In-memory NDIC WellFile — serialize the dataclass so the tab still shows
             # the normalized record (monthly-cadence history, empty esp_readings, etc.).
             from dataclasses import asdict
-            st.subheader("Normalized well record (from NDIC monthly filings)")
+            st.subheader("Normalized Well Record (From NDIC Monthly Filings)")
             st.caption("Built in-memory by the NDIC adapter — no JSON file on disk.")
             st.json(asdict(well))
 
@@ -558,7 +579,7 @@ def _render_trends(well, hist, fit, tc, latest_oil, esp_diag, key_ns: str = "") 
     col_a, col_b = st.columns([3, 2])
 
     with col_a:
-        st.subheader("Production decline vs. hyperbolic type curve")
+        st.subheader("Production Decline vs. Hyperbolic Type Curve")
 
         # ADDITIVE data-quality diagnostic: classify which points are representative for
         # trending (vs shut-ins / zero days, gross outliers). Does NOT change `fit`/`tc`
@@ -628,6 +649,9 @@ def _render_trends(well, hist, fit, tc, latest_oil, esp_diag, key_ns: str = "") 
         fig.update_layout(xaxis_title="Days on production", yaxis_title="Oil rate (BOPD)",
                           hovermode="x unified")
         st.plotly_chart(theme.style_fig(fig, height=380), width="stretch")
+        theme.source_note(
+            "Hyperbolic Arps decline fit; the dashed type curve is fit on early/established "
+            "points and extrapolated. Rates in BOPD vs. days on production.")
 
         if rep is not None and rep.n_excluded > 0:
             reasons = ", ".join(sorted(rep.reason_counts)) if rep.reason_counts else "—"
@@ -638,7 +662,7 @@ def _render_trends(well, hist, fit, tc, latest_oil, esp_diag, key_ns: str = "") 
                 "the optional representative-only overlay; the default fit above is unchanged.")
 
     with col_b:
-        st.subheader("Fit summary")
+        st.subheader("Fit Summary")
         c1, c2 = st.columns(2)
         with c1:
             st.metric("Initial rate (qᵢ)", f"{fit.qi:,.0f} BOPD")
@@ -647,7 +671,7 @@ def _render_trends(well, hist, fit, tc, latest_oil, esp_diag, key_ns: str = "") 
             st.metric("Hyperbolic b", f"{fit.b:.2f}")
             st.metric("R²", f"{fit.r_squared:.3f}")
 
-        st.markdown("##### Performance vs. type curve")
+        st.markdown("##### Performance vs. Type Curve")
         if tc is None:
             st.markdown(
                 "<div style='color:#aaa; font-size:0.85rem;'>Not enough history for a "
@@ -676,15 +700,15 @@ def _render_trends(well, hist, fit, tc, latest_oil, esp_diag, key_ns: str = "") 
     # ESP diagnostic multi-panel
     if esp_diag and well.esp_readings:
         st.divider()
-        st.subheader("ESP diagnostic signals (last 5 days)")
+        st.subheader("ESP Diagnostic Signals (Last 5 Days)")
 
         readings = pd.DataFrame(well.esp_readings)
         readings["date"] = pd.to_datetime(readings["date"])
 
         fig_esp = make_subplots(
             rows=2, cols=2, subplot_titles=(
-                "BFPD vs. POR window", "Intake pressure (psi)",
-                "Motor temp (°F)", "Motor amps (A)"),
+                "BFPD vs. POR Window", "Intake Pressure (psi)",
+                "Motor Temp (°F)", "Motor Amps (A)"),
             vertical_spacing=0.18, horizontal_spacing=0.10)
         fig_esp.add_trace(go.Scatter(
             x=readings["date"], y=readings["bfpd"], mode="lines+markers",
@@ -725,6 +749,8 @@ def _render_trends(well, hist, fit, tc, latest_oil, esp_diag, key_ns: str = "") 
     # ---- Probabilistic decline forecast (Monte-Carlo, prodpy) --------------
     _render_forecast_bands(well, hist)
 
+    theme.references(["arps", "dca_lib", "fetkovich", "monte_carlo", "prms"])
+
 
 def _render_forecast_bands(well, hist) -> None:
     """Monte-Carlo P10/P50/P90 decline forecast (rate fan + EUR + NPV) via prodpy.
@@ -752,7 +778,7 @@ def _render_forecast_bands(well, hist) -> None:
         return
 
     st.divider()
-    st.subheader("Probabilistic decline forecast (Monte-Carlo, prodpy)")
+    st.subheader("Probabilistic Decline Forecast (Monte-Carlo, prodpy)")
     st.caption(
         "500 Arps parameter draws from the fitted (qᵢ, Dᵢ) sampling distribution "
         f"(prodpy {fb.model}, R²={fb.r_squared:.3f}), seeded → deterministic. Shaded "
@@ -782,11 +808,14 @@ def _render_forecast_bands(well, hist) -> None:
             line=dict(color=theme.AMBER, width=2)))
         fig_fan.update_layout(
             xaxis_title="Days on production", yaxis_title="Oil rate (BOPD)",
-            hovermode="x unified", title="P10/P50/P90 rate fan")
+            hovermode="x unified", title="P10/P50/P90 Rate Fan")
         st.plotly_chart(theme.style_fig(fig_fan, height=360), width="stretch")
+        theme.source_note(
+            "Arps decline fit with Monte-Carlo P90/P50/P10 bands; rates in BOPD. "
+            "P90 = conservative, P10 = optimistic (SPE-PRMS).")
 
     with eur_col:
-        st.markdown("##### EUR bands (history cum + forecast)")
+        st.markdown("##### EUR Bands (History Cum + Forecast)")
         e1, e2, e3 = st.columns(3)
         e1.metric("EUR P90", f"{fb.eur_p90/1000:,.0f} MBO",
                   help="Conservative — 90% chance of exceeding")
@@ -812,7 +841,7 @@ def _render_forecast_bands(well, hist) -> None:
             eb = None
 
         if eb is not None:
-            st.markdown("##### Probabilistic value — NPV P90/P50/P10")
+            st.markdown("##### Probabilistic Value — NPV P90/P50/P10")
             v1, v2, v3 = st.columns(3)
             v1.metric("NPV P90", f"${eb['npv_p90_usd']/1e6:,.1f}MM",
                       help="Conservative remaining-stream value")
@@ -828,7 +857,7 @@ def _render_forecast_bands(well, hist) -> None:
 
 def _render_economics(well, key_ns: str | None = None) -> None:
     key_ns = key_ns or well.well_id
-    st.subheader("Monte-Carlo intervention economics")
+    st.subheader("Monte-Carlo Intervention Economics")
     st.caption(
         "Runs ~10,000 trials over uncertain inputs — incremental rate (lognormal ±30%), "
         "uplift decline (±0.15 abs), realized price (sd ~$12) — through the same NPV math "
@@ -873,9 +902,12 @@ def _render_economics(well, key_ns: str | None = None) -> None:
     ):
         fig_dist.add_vline(x=x_usd / 1e6, line_dash="dash", line_color=color,
                            annotation_text=tag, annotation_position="top")
-    fig_dist.update_layout(title="Monte-Carlo NPV distribution",
+    fig_dist.update_layout(title="Monte-Carlo NPV Distribution",
                            xaxis_title="NPV ($MM)", yaxis_title="Trials")
     st.plotly_chart(theme.style_fig(fig_dist, height=300, legend=False), width="stretch")
+    theme.source_note(
+        "Monte-Carlo trials of intervention NPV (10% discounted cash flow) over uncertain "
+        "inputs; dashed lines = P90/P50/P10, values in $MM. P90 = conservative, P10 = optimistic.")
 
     tdata = sim["tornado"]
     base_npv = sim["npv_p50_usd"]
@@ -899,7 +931,7 @@ def _render_economics(well, key_ns: str | None = None) -> None:
                 f"swing: ${d['swing']/1e6:,.2f}MM<extra></extra>")))
     fig_t.add_vline(x=base_npv, line_dash="dash", line_color=theme.AMBER,
                     annotation_text="P50", annotation_position="top")
-    fig_t.update_layout(title="Tornado — NPV sensitivity (one-at-a-time)",
+    fig_t.update_layout(title="Tornado — NPV Sensitivity (One-at-a-Time)",
                         xaxis_title="NPV ($)", bargap=0.4)
     st.plotly_chart(theme.style_fig(fig_t, height=300, legend=False), width="stretch")
 
@@ -917,7 +949,7 @@ def _render_economics(well, key_ns: str | None = None) -> None:
 
     # ---- AFE-Copilot chaining export ---------------------------------------
     st.divider()
-    st.markdown("##### ⬇ Export AFE diagnosis (for AFE-Copilot)")
+    st.markdown("##### ⬇ Export AFE Diagnosis (For AFE-Copilot)")
     st.caption(
         "Emits a validated JSON object matching AFE-Copilot's AFEDiagnosis schema — "
         "the pe→afe chain. Pick the canonical intervention; identity fields come from the well.")
@@ -942,14 +974,14 @@ def _render_economics(well, key_ns: str | None = None) -> None:
             data=json.dumps(afe_obj, indent=2),
             file_name=f"{well.well_id}-afe-diagnosis.json",
             mime="application/json", key=f"afedl_{key_ns}")
-        with st.expander("Preview AFE diagnosis JSON"):
+        with st.expander("Preview AFE Diagnosis JSON"):
             st.json(afe_obj)
     except ValueError as e:
         st.warning(f"Cannot build AFE diagnosis: {e}")
 
     # ---- In-app AFE authorization preview ----------------------------------
     st.divider()
-    st.markdown("##### 📝 Authorize — generate AFE preview")
+    st.markdown("##### 📝 Authorize — Generate AFE Preview")
     st.caption(
         "Closes the diagnose→authorize loop in-app: a one-page AFE authorization "
         "preview from the selected intervention's calibrated cost (no cross-service "
@@ -1001,7 +1033,7 @@ def _render_economics(well, key_ns: str | None = None) -> None:
                 f"(gross ${preview['gross_cost_usd']:,.0f})",
                 "ok" if (npv is not None and npv > 0) else "warn")
             st.caption(preview["authority_basis"])
-            with st.expander("AFE preview detail (line items + identity)"):
+            with st.expander("AFE Preview Detail (Line Items + Identity)"):
                 st.json(preview)
 
         st.markdown(
@@ -1009,9 +1041,11 @@ def _render_economics(well, key_ns: str | None = None) -> None:
             "to draft & track the full authorization (WI/NRI net economics, JIB "
             "allocation, risk register, audit trail).")
 
+    theme.references(["npv"])
+
 
 def _render_evals() -> None:
-    st.subheader("Eval dashboard — 41-case dev + blind holdout")
+    st.subheader("Eval Dashboard — 41-Case Dev + Blind Holdout")
     st.caption(
         "Reads the committed eval artifacts (evals/results/summary.json, holdout/summary_holdout.json, "
         "case_*.md). No API calls — this is the checked-in baseline the CI regression gate guards. "
@@ -1074,7 +1108,7 @@ def _render_evals() -> None:
     if errors:
         st.warning(f"{len(errors)} case(s) errored during the last run.")
 
-    st.markdown("##### Per-class recommendation agreement")
+    st.markdown("##### Per-Class Recommendation Agreement")
     cls = {}
     for r in scored:
         c = cls.setdefault(r.get("expected", "—"), [0, 0])
@@ -1085,7 +1119,7 @@ def _render_evals() -> None:
          for k, (h, n2) in sorted(cls.items(), key=lambda kv: kv[1][0] / kv[1][1])])
     st.dataframe(cls_df, width="stretch", hide_index=True)
 
-    st.markdown("##### Per-case results")
+    st.markdown("##### Per-Case Results")
     table_rows = []
     for r in rows:
         table_rows.append({
@@ -1100,7 +1134,7 @@ def _render_evals() -> None:
         })
     st.dataframe(pd.DataFrame(table_rows), width="stretch", hide_index=True)
 
-    st.markdown("##### Recommendation breakdown (expected → pass / miss)")
+    st.markdown("##### Recommendation Breakdown (Expected → Pass / Miss)")
     conf = {}
     for r in scored:
         exp = r.get("expected", "—")
@@ -1117,7 +1151,7 @@ def _render_evals() -> None:
     else:
         st.caption("No recommendation_match field in summary rows — breakdown unavailable.")
 
-    st.markdown("##### Case report")
+    st.markdown("##### Case Report")
     case_ids = [r.get("id") for r in rows if r.get("id")]
     if case_ids:
         pick = st.selectbox("View a case report", case_ids)
@@ -1142,7 +1176,7 @@ _source, _ndic_wells, _detail = _resolve_source()
 
 overview = st.Page(
     partial(render_overview, _source, _ndic_wells, _detail),
-    title="Fleet overview", icon="📊", default=True)
+    title="Fleet Overview", icon="📊", default=True)
 
 if _source == "real" and _ndic_wells:
     # Real NDIC fleet: one page per in-memory WellFile (no JSON path, no cross-links).
