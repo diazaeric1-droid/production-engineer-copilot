@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-06-07
+### Added
+- **Real public data is now the DEFAULT** — Colorado ECMC (COGCC) **DJ Basin Niobrara/Codell** per-well monthly production (28-well committed slice, harvested by `data/real/colorado/fetch_colorado.py`); new `src/adapters/colorado.py`. Sidebar defaults to **Real — Colorado**; NDIC retained as a bring-your-own-export path (NDIC bulk data is a paid subscription).
+### Changed
+- **Light theme** — suite-wide migration from dark/navy to a professional light palette (white surfaces, `plotly_white` charts, navy/blue accents retained); transparent fixed header so the title never clips. `runtime.txt` pinned to Python 3.11.
+
 ## [0.8.0] — 2026-06-06
 
 ### Added
