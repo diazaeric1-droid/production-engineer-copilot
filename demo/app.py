@@ -68,9 +68,11 @@ def _well_files(data_dir: str) -> list[str]:
     return [str(p) for p in sorted(Path(data_dir).glob("well_*.json"))]
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_resource(show_spinner=False)
 def _load_well_cached(path: str) -> WellFile:
-    """Cache a single parsed WellFile (cheap, but called on every page)."""
+    """Cache a single parsed WellFile. Uses cache_resource (not cache_data) because
+    WellFile is a custom class — Streamlit's cache_data serializer rejects custom
+    classes on Python 3.14 / newer Streamlit. Read-only here, so sharing is safe."""
     return WellFile.from_json(path)
 
 
