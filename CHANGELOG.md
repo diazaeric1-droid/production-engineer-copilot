@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.8.0] — 2026-06-06
 
 ### Added
+- **Representative-vs-anomalous data-quality diagnostic** (`src/analyzers/representative.py`) —
+  classifies which `production_history` oil-rate points are **representative** for decline /
+  type-curve trending vs which to **EXCLUDE** (shut-in / zero-rate days, gross outliers vs a
+  robust decline-aware trend; reuses the median/MAD robust z and the Arps `fit_decline`). Surfaced
+  in the per-well **Trends** tab: non-representative points are marked with a distinct ✕, plus an
+  **optional** "fit on representative points only" overlay curve. **Additive & eval-safe** — it does
+  NOT change `fit_decline` / `analyze_type_curve`, the agent/recommendation logic, or the default
+  fit the blind-holdout eval runs through; guarded for < 5-point wells and wrapped so it never
+  crashes the page.
 - **Real-data option (North Dakota / NDIC)** — a sidebar "Data source" toggle (Synthetic default |
   Real — NDIC) + an NDIC adapter (`src/adapters/ndic.py`) that ingests tidy per-well **monthly**
   Bakken filings (monthly→avg-daily-rate); drops in at `data/real/ndic/production.csv` (see README +

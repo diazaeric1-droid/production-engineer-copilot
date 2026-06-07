@@ -48,7 +48,15 @@ import theme
 from src import __version__ as APP_VERSION
 from src.agent import run_review
 from src.analyzers.decline_curve import fit_decline, analyze_type_curve
+try:
+    # Additive data-quality diagnostic (representative-vs-anomalous points for trending).
+    # Guarded so a missing/broken module can never take down the Trends tab.
+    from src.analyzers.representative import classify_representative
+except Exception:  # pragma: no cover - defensive
+    classify_representative = None
 from src.analyzers.economics import evaluate_intervention, simulate_intervention
+from src.analyzers.forecast_bands import decline_forecast_bands
+from src.analyzers.economics_bands import economics_bands
 from src.analyzers.esp_diagnostics import evaluate_esp
 from src.afe_preview import build_afe_preview
 from src.analyzers import assumptions as A
@@ -468,7 +476,7 @@ def render_well(well: WellFile, *, source: str = "synthetic", detail: str = "",
     ])
 
     with tab_trends:
-        _render_trends(well, hist, fit, tc, latest_oil, esp_diag)
+        _render_trends(well, hist, fit, tc, latest_oil, esp_diag, key_ns=key_ns)
 
     with tab_econ:
         _render_economics(well, key_ns)
@@ -521,11 +529,31 @@ def render_well(well: WellFile, *, source: str = "synthetic", detail: str = "",
     _back_to_overview()
 
 
-def _render_trends(well, hist, fit, tc, latest_oil, esp_diag) -> None:
+def _render_trends(well, hist, fit, tc, latest_oil, esp_diag, key_ns: str = "") -> None:
     col_a, col_b = st.columns([3, 2])
 
     with col_a:
         st.subheader("Production decline vs. hyperbolic type curve")
+
+        # ADDITIVE data-quality diagnostic: classify which points are representative for
+        # trending (vs shut-ins / zero days, gross outliers). Does NOT change `fit`/`tc`
+        # — those remain the trusted default the agent + eval use. Fully guarded.
+        rep = None
+        if classify_representative is not None:
+            try:
+                rep = classify_representative(well.production_history)
+            except Exception:
+                rep = None
+
+        show_rep_fit = False
+        if rep is not None and rep.n_excluded > 0 and rep.n_representative >= 5:
+            show_rep_fit = st.checkbox(
+                "Overlay a fit on representative points only", value=False,
+                key=f"repfit_{key_ns}",
+                help="Diagnostic overlay — refits the decline EXCLUDING the "
+                     f"{rep.n_excluded} non-representative point(s). The default fit "
+                     "above (used by the AI review + economics) is unchanged.")
+
         days_dense = np.linspace(hist["day"].min(), hist["day"].max(), 100)
         curve_qi, curve_di, curve_b = (
             (tc.qi, tc.di, tc.b) if tc else (fit.qi, fit.di, fit.b)
@@ -544,6 +572,30 @@ def _render_trends(well, hist, fit, tc, latest_oil, esp_diag) -> None:
         fig.add_trace(go.Scatter(
             x=days_dense, y=fit_curve, mode="lines", name=tc_label,
             line=dict(color=theme.AMBER, width=2, dash="dash")))
+
+        # Mark non-representative points (excluded from trending) with a distinct ✕.
+        if rep is not None and rep.n_excluded > 0:
+            ex = rep.excluded_mask
+            fig.add_trace(go.Scatter(
+                x=hist["day"].to_numpy()[ex], y=hist["oil_bopd"].to_numpy()[ex],
+                mode="markers", name="Non-representative (excluded)",
+                marker=dict(size=14, color=theme.RED, symbol="x",
+                            line=dict(width=2, color=theme.RED))))
+
+        # Optional overlay: refit on representative points only (diagnostic, never the default).
+        if show_rep_fit and rep is not None:
+            try:
+                keep = rep.representative
+                rep_fit = fit_decline(rep.days[keep], rep.rates[keep], model="hyperbolic")
+                rep_curve = rep_fit.qi / np.power(
+                    1 + rep_fit.b * rep_fit.di * days_dense, 1 / max(rep_fit.b, 1e-6))
+                fig.add_trace(go.Scatter(
+                    x=days_dense, y=rep_curve, mode="lines",
+                    name=f"Fit on representative only (b={rep_fit.b:.2f}, R²={rep_fit.r_squared:.3f})",
+                    line=dict(color=theme.GREEN, width=2, dash="dot")))
+            except Exception:
+                st.caption("Could not refit on representative points only.")
+
         fig.add_trace(go.Scatter(
             x=[hist["day"].iloc[-1]], y=[latest_oil], mode="markers", name="Today",
             marker=dict(size=18, color=theme.RED if today_below else theme.GREEN,
@@ -551,6 +603,14 @@ def _render_trends(well, hist, fit, tc, latest_oil, esp_diag) -> None:
         fig.update_layout(xaxis_title="Days on production", yaxis_title="Oil rate (BOPD)",
                           hovermode="x unified")
         st.plotly_chart(theme.style_fig(fig, height=380), width="stretch")
+
+        if rep is not None and rep.n_excluded > 0:
+            reasons = ", ".join(sorted(rep.reason_counts)) if rep.reason_counts else "—"
+            st.caption(
+                f"🧹 Data quality: **{rep.n_excluded}** of {rep.n_points} points "
+                f"({rep.representative_pct:.0f}% representative) flagged "
+                f"non-representative for trending — {reasons}. These are excluded from "
+                "the optional representative-only overlay; the default fit above is unchanged.")
 
     with col_b:
         st.subheader("Fit summary")
@@ -636,6 +696,109 @@ def _render_trends(well, hist, fit, tc, latest_oil, esp_diag) -> None:
         else:
             st.markdown("<div class='flag-ok'>✓ ESP operating within all thresholds</div>",
                         unsafe_allow_html=True)
+
+    # ---- Probabilistic decline forecast (Monte-Carlo, prodpy) --------------
+    _render_forecast_bands(well, hist)
+
+
+def _render_forecast_bands(well, hist) -> None:
+    """Monte-Carlo P10/P50/P90 decline forecast (rate fan + EUR + NPV) via prodpy.
+
+    ADDITIVE: a fan/EUR/NPV uncertainty view layered on top of the deterministic
+    decline fit. Fully guarded — any prodpy/fit issue (or a too-short series) hides
+    the section rather than crashing the page. Reuses the same realized-price deck
+    the Economics tab uses (sidebar/Economics input, cited assumptions default) so
+    the probabilistic value is consistent with the deterministic NPV.
+    """
+    # Mirror the decline analyzer's insufficient-data guard (need >= 5 points).
+    if len(hist) < 5:
+        return
+    try:
+        days = hist["day"].values
+        rates = hist["oil_bopd"].values
+        fb = decline_forecast_bands(
+            days, rates,
+            horizon_days=365 * 5, n=500, seed=42,
+            model="hyperbolic", step_days=30.0,
+            econ_limit_bopd=float(A.ECONOMIC_LIMIT_BOPD),
+        )
+    except Exception:
+        # prodpy missing, fit failure, degenerate series, etc. — hide gracefully.
+        return
+
+    st.divider()
+    st.subheader("Probabilistic decline forecast (Monte-Carlo, prodpy)")
+    st.caption(
+        "500 Arps parameter draws from the fitted (qᵢ, Dᵢ) sampling distribution "
+        f"(prodpy {fb.model}, R²={fb.r_squared:.3f}), seeded → deterministic. Shaded "
+        "band = P90–P10 rate fan, line = P50. Reserves convention: P90 conservative ≤ "
+        "P50 ≤ P10. Truncated at the {:.0f} BOPD economic limit.".format(
+            float(A.ECONOMIC_LIMIT_BOPD)))
+
+    fan_col, eur_col = st.columns([3, 2])
+
+    with fan_col:
+        fig_fan = go.Figure()
+        # History (actual) for context.
+        fig_fan.add_trace(go.Scatter(
+            x=hist["day"], y=hist["oil_bopd"], mode="markers",
+            name="Actual oil rate",
+            marker=dict(size=7, color=theme.BLUE)))
+        # Shaded P90–P10 band: draw P10 (upper), then fill down to P90 (lower).
+        fig_fan.add_trace(go.Scatter(
+            x=fb.days, y=fb.p10_rate, mode="lines", name="P10 (optimistic)",
+            line=dict(color=theme.GREEN, width=1)))
+        fig_fan.add_trace(go.Scatter(
+            x=fb.days, y=fb.p90_rate, mode="lines", name="P90 (conservative)",
+            line=dict(color=theme.RED, width=1),
+            fill="tonexty", fillcolor="rgba(79,129,189,0.20)"))
+        fig_fan.add_trace(go.Scatter(
+            x=fb.days, y=fb.p50_rate, mode="lines", name="P50 (median)",
+            line=dict(color=theme.AMBER, width=2)))
+        fig_fan.update_layout(
+            xaxis_title="Days on production", yaxis_title="Oil rate (BOPD)",
+            hovermode="x unified", title="P10/P50/P90 rate fan")
+        st.plotly_chart(theme.style_fig(fig_fan, height=360), width="stretch")
+
+    with eur_col:
+        st.markdown("##### EUR bands (history cum + forecast)")
+        e1, e2, e3 = st.columns(3)
+        e1.metric("EUR P90", f"{fb.eur_p90/1000:,.0f} MBO",
+                  help="Conservative — 90% chance of exceeding")
+        e2.metric("EUR P50", f"{fb.eur_p50/1000:,.0f} MBO", help="Median estimate")
+        e3.metric("EUR P10", f"{fb.eur_p10/1000:,.0f} MBO",
+                  help="Optimistic — 10% chance of exceeding")
+        st.caption(
+            f"History cum ≈ {fb.cum_history_bbl/1000:,.0f} MBO · forecast to "
+            f"{fb.days[-1]/365:,.1f} yr on production.")
+
+        # ---- Probabilistic value — NPV P90/P50/P10 -------------------------
+        # Reuse the Economics tab's realized-price input if the visitor set one,
+        # else the cited realized-price assumption. Keeps the deck consistent.
+        price = float(st.session_state.get(
+            f"mcp_{well.well_id}", A.REALIZED_PRICE_USD_PER_BBL))
+        try:
+            eb = economics_bands(
+                fb, price=price, nri=1.0,
+                opex_per_bbl=float(A.LOE_USD_PER_BBL),
+                discount_annual=float(A.DISCOUNT_RATE),
+            )
+        except Exception:
+            eb = None
+
+        if eb is not None:
+            st.markdown("##### Probabilistic value — NPV P90/P50/P10")
+            v1, v2, v3 = st.columns(3)
+            v1.metric("NPV P90", f"${eb['npv_p90_usd']/1e6:,.1f}MM",
+                      help="Conservative remaining-stream value")
+            v2.metric("NPV P50", f"${eb['npv_p50_usd']/1e6:,.1f}MM", help="Median")
+            v3.metric("NPV P10", f"${eb['npv_p10_usd']/1e6:,.1f}MM",
+                      help="Optimistic")
+            st.caption(
+                f"PV of the forecast oil stream @ ${price:,.0f}/bbl − "
+                f"${A.LOE_USD_PER_BBL:,.0f}/bbl LOE, {A.DISCOUNT_RATE*100:.0f}% "
+                "discount (cited assumptions.py). No upfront capital — values the "
+                "existing producing stream, not an intervention.")
 
 
 def _render_economics(well, key_ns: str | None = None) -> None:
