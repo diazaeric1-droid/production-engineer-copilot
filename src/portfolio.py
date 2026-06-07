@@ -104,7 +104,16 @@ def _indicated_intervention(well: WellFile) -> tuple[str, str]:
 
 
 def screen_well(path: str) -> PortfolioRow:
-    well = WellFile.from_json(path)
+    """Screen a well JSON path (synthetic fleet). Thin wrapper over ``screen_wellfile``."""
+    return screen_wellfile(WellFile.from_json(path))
+
+
+def screen_wellfile(well: WellFile) -> PortfolioRow:
+    """Deterministic screen of an in-memory ``WellFile`` (synthetic OR real adapter output).
+
+    Identical logic to ``screen_well`` — extracted so adapter-built wells (e.g. NDIC
+    monthly fleet) get the SAME diagnosis + risked economics without a JSON round-trip.
+    """
     intervention, diagnosis = _indicated_intervention(well)
     oil = np.array([r.get("oil_bopd", 0) for r in well.production_history], float)
     last_oil = float(oil[oil > 0][-1]) if (oil > 0).any() else 0.0

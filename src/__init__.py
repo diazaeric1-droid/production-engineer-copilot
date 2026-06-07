@@ -1,2 +1,2 @@
 """Production Engineer Copilot — AI agent for well reviews."""
-__version__ = "0.7.0"
+__version__ = "0.8.0"

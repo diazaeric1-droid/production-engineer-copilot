@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-06-06
+
+### Added
+- **Real-data option (North Dakota / NDIC)** — a sidebar "Data source" toggle (Synthetic default |
+  Real — NDIC) + an NDIC adapter (`src/adapters/ndic.py`) that ingests tidy per-well **monthly**
+  Bakken filings (monthly→avg-daily-rate); drops in at `data/real/ndic/production.csv` (see README +
+  template). ESP diagnostics gate off gracefully on real monthly data (no public ESP telemetry).
+- **Data-provenance badge** under the header (green "REAL DATA — NDIC/Bakken" vs amber "SYNTHETIC")
+  so a visitor always knows what they're looking at.
+
 ## [0.7.0] — 2026-06-06
 
 ### Added

@@ -53,11 +53,20 @@ from src.analyzers.esp_diagnostics import evaluate_esp
 from src.afe_preview import build_afe_preview
 from src.analyzers import assumptions as A
 from src.data_loader import WellFile
-from src.portfolio import screen_well, _NON_ECONOMIC
+from src.portfolio import screen_well, screen_wellfile, _NON_ECONOMIC
+from src.adapters.ndic import load_ndic_fleet
 from src.tools import AFE_INTERVENTIONS, export_afe_diagnosis
 
 
 DATA_DIR = REPO_ROOT / "data" / "synthetic"
+NDIC_CSV = REPO_ROOT / "data" / "real" / "ndic" / "production.csv"
+
+# Data-source provenance copy (kept in one place; used by the sidebar toggle, the
+# badge under each header, and the fallback warning).
+_REAL_DETAIL = ("North Dakota (NDIC) public monthly filings — Bakken (Williston). "
+                "Monthly cadence; no ESP telemetry.")
+_SYNTHETIC_DETAIL = ("Modeled wells with known ground truth (clean signatures + ESP "
+                     "readings for the diagnostics).")
 
 
 # ---------- cached heavy loads (string args so they hash/cache cleanly) ------
@@ -76,6 +85,45 @@ def _load_well_cached(path: str) -> WellFile:
     return WellFile.from_json(path)
 
 
+@st.cache_resource(show_spinner=False)
+def _ndic_wells(csv_path: str) -> list[WellFile]:
+    """Cache the real NDIC fleet parsed from a dropped monthly-production CSV.
+
+    cache_resource (not cache_data) because WellFile is a custom class. Returns the
+    list of WellFiles; raises on a missing/empty/malformed file (caller catches)."""
+    return load_ndic_fleet(csv_path)
+
+
+def _resolve_source() -> tuple[str, list[WellFile] | None, str]:
+    """Resolve the ACTIVE data source from the sidebar toggle.
+
+    Returns ``(source, ndic_wells_or_None, detail)`` where source is
+    'real' or 'synthetic'. If the user picks Real but no extract exists (or it fails
+    to parse), falls back to synthetic and surfaces a one-time ``st.warning``.
+    """
+    choice = st.sidebar.radio(
+        "Data source",
+        ("Synthetic (demo)", "Real — North Dakota (NDIC)"),
+        index=0,
+        help="Synthetic = modeled wells with known ground truth (full ESP diagnostics). "
+             "Real = North Dakota (NDIC) public monthly Bakken filings, loaded from "
+             "data/real/ndic/production.csv when present (monthly cadence, no ESP telemetry).",
+    )
+    if choice.startswith("Real"):
+        if NDIC_CSV.exists():
+            try:
+                wells = _ndic_wells(str(NDIC_CSV))
+                if wells:
+                    return "real", wells, _REAL_DETAIL
+                st.sidebar.warning("NDIC extract parsed to 0 wells — showing synthetic.")
+            except Exception as e:
+                st.sidebar.warning(f"Could not read NDIC extract ({e}) — showing synthetic.")
+        else:
+            st.warning("No NDIC extract found in data/real/ndic/ — see README. "
+                       "Showing synthetic.")
+    return "synthetic", None, _SYNTHETIC_DETAIL
+
+
 @st.cache_data(show_spinner=False)
 def _eval_chip_text() -> str:
     """Read the committed blind-holdout result so the header chip never goes stale."""
@@ -91,9 +139,57 @@ def _eval_chip_text() -> str:
     return "● eval-gated (see Evals tab)"
 
 
+def _fleet_row(well: WellFile, key: str, lift: str, lateral, basin_formation: str,
+               screen_row) -> dict:
+    """Build one fleet-table row from a WellFile + its identity + a portfolio screen.
+
+    Shared by the synthetic (JSON) and real (NDIC adapter) sources so both produce the
+    SAME columns. ``lateral`` may be None (real NDIC has no completion lateral).
+    """
+    hist = well.production_history
+    n = len(hist)
+    oil = water = gas = gor = wc = days_on = float("nan")
+    if n:
+        last = hist[-1]
+        oil = float(last.get("oil_bopd", float("nan")))
+        water = float(last.get("water_bwpd", float("nan")))
+        gas = float(last.get("gas_mcfd", float("nan")))
+        days_on = int(last.get("day", 0))
+        if not np.isnan(oil) and not np.isnan(water) and (oil + water) > 0:
+            wc = water / (oil + water) * 100.0
+        if not np.isnan(gas) and not np.isnan(oil) and oil > 0:
+            gor = gas * 1000.0 / oil
+
+    diagnosis = intervention = None
+    npv = pi = float("nan")
+    if screen_row is not None:
+        intervention = screen_row.intervention
+        diagnosis = screen_row.diagnosis
+        if screen_row.intervention not in _NON_ECONOMIC:
+            npv = float(screen_row.npv_usd)
+            pi = float(screen_row.profitability_index)
+
+    return {
+        "Well": well.well_id,                 # display id (ED-0NNH or NDIC well name)
+        "_key": key,                           # page key
+        "Lift": lift or "—",
+        "Lateral (ft)": lateral,
+        "Basin·Formation": basin_formation,
+        "Oil BOPD": round(oil, 0) if not np.isnan(oil) else None,
+        "Water cut %": round(wc, 1) if not np.isnan(wc) else None,
+        "GOR scf/bbl": round(gor, 0) if not np.isnan(gor) else None,
+        "Days on prod": days_on if not np.isnan(days_on) else None,
+        "Points": n,
+        "Indicated": intervention or "—",
+        "Diagnosis": diagnosis or ("insufficient data" if n < 5 else "—"),
+        "Risked NPV $": round(npv, 0) if not np.isnan(npv) else None,
+        "PI": round(pi, 2) if not np.isnan(pi) else None,
+    }
+
+
 @st.cache_data(show_spinner=False)
 def _fleet_table(data_dir: str) -> pd.DataFrame:
-    """Deterministic one-row-per-well fleet table (no LLM).
+    """Deterministic one-row-per-well fleet table for the SYNTHETIC fleet (no LLM).
 
     Columns: identity from the JSON + the shared fleet registry (lift, lateral,
     basin·formation), the latest-point rates / water-cut / GOR / days-on, and the
@@ -108,50 +204,32 @@ def _fleet_table(data_dir: str) -> pd.DataFrame:
             well = _load_well_cached(path)
         except Exception:
             continue
-        hist = well.production_history
-        n = len(hist)
-        oil = water = gas = gor = wc = days_on = float("nan")
-        if n:
-            last = hist[-1]
-            oil = float(last.get("oil_bopd", float("nan")))
-            water = float(last.get("water_bwpd", float("nan")))
-            gas = float(last.get("gas_mcfd", float("nan")))
-            days_on = int(last.get("day", 0))
-            if not np.isnan(oil) and not np.isnan(water) and (oil + water) > 0:
-                wc = water / (oil + water) * 100.0
-            if not np.isnan(gas) and not np.isnan(oil) and oil > 0:
-                gor = gas * 1000.0 / oil
-
-        # Deterministic economics + indicated intervention (the same screen the
-        # field/portfolio ranking uses). Guarded — never crash a single well.
-        diagnosis = intervention = None
-        npv = pi = float("nan")
         try:
-            pr = screen_well(path)
-            intervention = pr.intervention
-            diagnosis = pr.diagnosis
-            if pr.intervention not in _NON_ECONOMIC:
-                npv = float(pr.npv_usd)
-                pi = float(pr.profitability_index)
+            screen_row = screen_well(path)
         except Exception:
-            pass
+            screen_row = None
+        rows.append(_fleet_row(well, stem, meta.lift, meta.lateral_length_ft,
+                               f"{meta.basin} · {meta.formation}", screen_row))
+    return pd.DataFrame(rows)
 
-        rows.append({
-            "Well": well.well_id,                 # display id (ED-0NNH)
-            "_key": stem,                          # registry / page key (well_0NN)
-            "Lift": meta.lift,
-            "Lateral (ft)": meta.lateral_length_ft,
-            "Basin·Formation": f"{meta.basin} · {meta.formation}",
-            "Oil BOPD": round(oil, 0) if not np.isnan(oil) else None,
-            "Water cut %": round(wc, 1) if not np.isnan(wc) else None,
-            "GOR scf/bbl": round(gor, 0) if not np.isnan(gor) else None,
-            "Days on prod": days_on if not np.isnan(days_on) else None,
-            "Points": n,
-            "Indicated": intervention or "—",
-            "Diagnosis": diagnosis or ("insufficient data" if n < 5 else "—"),
-            "Risked NPV $": round(npv, 0) if not np.isnan(npv) else None,
-            "PI": round(pi, 2) if not np.isnan(pi) else None,
-        })
+
+def _ndic_fleet_table(wells: list[WellFile]) -> pd.DataFrame:
+    """Same deterministic fleet table built from REAL NDIC WellFiles (in-memory).
+
+    No fleet-registry join (NDIC wells aren't in the synthetic Permian registry):
+    identity comes from the filing itself — lift is blank (NDIC has none), lateral is
+    None, basin·formation from the well's field/formation.
+    """
+    rows = []
+    for i, well in enumerate(wells):
+        try:
+            screen_row = screen_wellfile(well)
+        except Exception:
+            screen_row = None
+        fm = well.completion.get("formation", "—")
+        basin_formation = f"{well.field} · {fm}"
+        rows.append(_fleet_row(well, f"ndic_{i}", well.artificial_lift.get("type", ""),
+                               None, basin_formation, screen_row))
     return pd.DataFrame(rows)
 
 
@@ -159,7 +237,7 @@ def _fleet_table(data_dir: str) -> pd.DataFrame:
 # PAGE: Fleet overview
 # =====================================================================
 
-def render_overview() -> None:
+def render_overview(source: str, ndic_wells: list[WellFile] | None, detail: str) -> None:
     theme.header(
         "Production Engineer Copilot",
         subtitle="AI agent that reviews a fleet of wells — deterministic petroleum-engineering "
@@ -167,6 +245,7 @@ def render_overview() -> None:
         chips=[(f"v{APP_VERSION}", "ver"), (_eval_chip_text(), "eval"),
                ("fleet explorer", "info")],
     )
+    theme.data_badge(source, detail)
 
     with st.expander(f"🆕 What's new in v{APP_VERSION}"):
         st.markdown(
@@ -184,7 +263,10 @@ def render_overview() -> None:
             "- **Crash fix** — wells with < 5 production points show an \"insufficient data\" panel."
         )
 
-    table = _fleet_table(str(DATA_DIR))
+    table = _ndic_fleet_table(ndic_wells) if source == "real" else _fleet_table(str(DATA_DIR))
+    if table.empty:
+        st.info("No wells to display for the selected data source.")
+        return
 
     # --- fleet snapshot KPIs ------------------------------------------------
     st.subheader("Fleet snapshot")
@@ -255,10 +337,17 @@ def _back_to_overview() -> None:
         pass
 
 
-def render_well(path: str) -> None:
-    """The original single-well dashboard for one well JSON path. Behavior is
-    preserved exactly; the BYOK key + run controls live in the page body."""
-    well = _load_well_cached(path)
+def render_well(well: WellFile, *, source: str = "synthetic", detail: str = "",
+                raw_path: str | None = None, key_ns: str | None = None,
+                cross_link_stem: str | None = None) -> None:
+    """The single-well dashboard for one WellFile. Behavior for the synthetic source is
+    preserved exactly; the BYOK key + run controls live in the page body.
+
+    ``well`` is already-resolved (synthetic from JSON, or a real NDIC adapter WellFile).
+    ``raw_path`` is the JSON path for the Raw-Data tab (None for in-memory NDIC wells →
+    the dataclass is serialized instead). ``key_ns`` namespaces widget keys (defaults to
+    well_id). ``cross_link_stem`` enables sibling-app deep links (synthetic only)."""
+    key_ns = key_ns or well.well_id
     hist = pd.DataFrame(well.production_history)
 
     # ---- header (title + well meta + eval chip) ----------------------------
@@ -272,9 +361,12 @@ def render_well(path: str) -> None:
         subtitle=_well_meta,
         chips=[(f"v{APP_VERSION}", "ver"), (_eval_chip_text(), "eval")],
     )
+    theme.data_badge(source, detail)
     # Cross-app deep links use the well_0NN page stem (matches sibling apps'
     # url_path), not the ED-NNH well_id, so the same well opens in each sibling.
-    theme.well_cross_links("pe-copilot", Path(path).stem)
+    # Only for the synthetic fleet — NDIC wells don't exist in the sibling apps.
+    if cross_link_stem:
+        theme.well_cross_links("pe-copilot", cross_link_stem)
     _back_to_overview()
 
     # ---- per-well controls (moved out of the global sidebar) ---------------
@@ -283,24 +375,24 @@ def render_well(path: str) -> None:
         cc1, cc2 = st.columns([1, 1])
         with cc1:
             byok_key = st.text_input(
-                "🔑 Anthropic API key (optional)", type="password", key=f"byok_{well.well_id}",
+                "🔑 Anthropic API key (optional)", type="password", key=f"byok_{key_ns}",
                 help="Bring your own key — used only for this session, never stored. Powers the AI "
                      "well review. Get one at console.anthropic.com. The charts, decline fit, ESP "
                      "diagnostics, economics, and eval dashboard all work without it.")
             show_tools = st.checkbox("Show agent tool calls in review", value=True,
-                                     key=f"tools_{well.well_id}")
+                                     key=f"tools_{key_ns}")
             _model_opts = {
                 "Claude Sonnet 4.6 (default)": "claude-sonnet-4-6",
                 "Claude Haiku (≈4× cheaper)": "claude-haiku-4-5",
             }
             _model_label = st.selectbox(
-                "Model", list(_model_opts), index=0, key=f"model_{well.well_id}")
+                "Model", list(_model_opts), index=0, key=f"model_{key_ns}")
             review_model = _model_opts[_model_label]
             st.caption("Haiku ≈ Sonnet quality on the eval at ~4× lower cost; "
                        "Sonnet is the verified-safe default.")
         with cc2:
             run = st.button("Run AI well review", type="primary", width="stretch",
-                            key=f"run_{well.well_id}")
+                            key=f"run_{key_ns}")
             st.caption("Review takes ~30 sec and costs ~$0.05 of your own API credit.")
             st.markdown(
                 "Claude reasons and writes; **deterministic Python tools** do the engineering "
@@ -379,13 +471,21 @@ def render_well(path: str) -> None:
         _render_trends(well, hist, fit, tc, latest_oil, esp_diag)
 
     with tab_econ:
-        _render_economics(well)
+        _render_economics(well, key_ns)
 
     with tab_review:
-        if run:
+        if raw_path is None:
+            # The agent reads a well JSON path; real NDIC wells are in-memory only.
+            # Deterministic charts/economics above already render — only the LLM
+            # narrative is unavailable for this source.
+            st.info("The AI well review runs on the synthetic fleet (the agent reads a "
+                    "well JSON). For the real NDIC source, the **deterministic** analysis "
+                    "above — decline fit, type curve, economics — still applies; monthly "
+                    "public filings carry no ESP telemetry for the diagnostic panel.")
+        elif run:
             try:
                 with st.spinner("Agent reasoning + tool calls…"):
-                    report = run_review(str(path), model=review_model,
+                    report = run_review(str(raw_path), model=review_model,
                                         verbose=show_tools, api_key=byok_key or None)
                 st.markdown(report)
                 st.download_button("⬇ Download review (Markdown)", report,
@@ -406,9 +506,17 @@ def render_well(path: str) -> None:
         _render_evals()
 
     with tab_raw:
-        st.subheader("Raw well file (JSON)")
-        with open(path) as f:
-            st.json(json.load(f))
+        if raw_path is not None:
+            st.subheader("Raw well file (JSON)")
+            with open(raw_path) as f:
+                st.json(json.load(f))
+        else:
+            # In-memory NDIC WellFile — serialize the dataclass so the tab still shows
+            # the normalized record (monthly-cadence history, empty esp_readings, etc.).
+            from dataclasses import asdict
+            st.subheader("Normalized well record (from NDIC monthly filings)")
+            st.caption("Built in-memory by the NDIC adapter — no JSON file on disk.")
+            st.json(asdict(well))
 
     _back_to_overview()
 
@@ -530,7 +638,8 @@ def _render_trends(well, hist, fit, tc, latest_oil, esp_diag) -> None:
                         unsafe_allow_html=True)
 
 
-def _render_economics(well) -> None:
+def _render_economics(well, key_ns: str | None = None) -> None:
+    key_ns = key_ns or well.well_id
     st.subheader("Monte-Carlo intervention economics")
     st.caption(
         "Runs ~10,000 trials over uncertain inputs — incremental rate (lognormal ±30%), "
@@ -539,19 +648,19 @@ def _render_economics(well) -> None:
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        mc_name = st.text_input("Intervention", value="Acid stimulation", key=f"mcn_{well.well_id}")
+        mc_name = st.text_input("Intervention", value="Acid stimulation", key=f"mcn_{key_ns}")
         mc_cost = st.number_input("Treatment cost ($)", value=150_000, step=10_000, min_value=1_000,
-                                  key=f"mcc_{well.well_id}")
+                                  key=f"mcc_{key_ns}")
     with c2:
         mc_rate = st.number_input("Incremental rate (BOPD)", value=120.0, step=10.0, min_value=0.0,
-                                  key=f"mcr_{well.well_id}")
+                                  key=f"mcr_{key_ns}")
         mc_decline = st.number_input("Uplift decline (/yr)", value=0.6, step=0.05, min_value=0.0,
-                                     key=f"mcd_{well.well_id}")
+                                     key=f"mcd_{key_ns}")
     with c3:
         mc_price = st.number_input("Realized price ($/bbl)", value=65.0, step=1.0, min_value=1.0,
-                                   key=f"mcp_{well.well_id}")
+                                   key=f"mcp_{key_ns}")
         mc_trials = st.select_slider("Trials", options=[1_000, 5_000, 10_000, 20_000], value=10_000,
-                                     key=f"mct_{well.well_id}")
+                                     key=f"mct_{key_ns}")
 
     sim = simulate_intervention(
         name=mc_name, treatment_cost_usd=float(mc_cost), incremental_rate_bopd=float(mc_rate),
@@ -628,11 +737,11 @@ def _render_economics(well) -> None:
     with af1:
         afe_interv = st.selectbox("Intervention (AFE key)", AFE_INTERVENTIONS,
                                   index=AFE_INTERVENTIONS.index("acid_stimulation"),
-                                  key=f"afei_{well.well_id}")
+                                  key=f"afei_{key_ns}")
     with af2:
         afe_diag = st.text_input("Primary diagnosis",
                                  value="Below type curve; mechanical degradation indicated",
-                                 key=f"afed_{well.well_id}")
+                                 key=f"afed_{key_ns}")
     try:
         afe_obj = export_afe_diagnosis(well, {
             "intervention": afe_interv,
@@ -644,7 +753,7 @@ def _render_economics(well) -> None:
             "⬇ Export AFE diagnosis (for AFE-Copilot)",
             data=json.dumps(afe_obj, indent=2),
             file_name=f"{well.well_id}-afe-diagnosis.json",
-            mime="application/json", key=f"afedl_{well.well_id}")
+            mime="application/json", key=f"afedl_{key_ns}")
         with st.expander("Preview AFE diagnosis JSON"):
             st.json(afe_obj)
     except ValueError as e:
@@ -658,9 +767,9 @@ def _render_economics(well) -> None:
         "preview from the selected intervention's calibrated cost (no cross-service "
         "call, no API key). Routes the $ amount to the required approver, then open "
         "the AFE Copilot to draft & track the full authorization.")
-    if st.button("Generate AFE", type="primary", key=f"gen_afe_{well.well_id}"):
-        st.session_state[f"_show_afe_{well.well_id}"] = True
-    if st.session_state.get(f"_show_afe_{well.well_id}"):
+    if st.button("Generate AFE", type="primary", key=f"gen_afe_{key_ns}"):
+        st.session_state[f"_show_afe_{key_ns}"] = True
+    if st.session_state.get(f"_show_afe_{key_ns}"):
         afe_defaults = A.intervention_defaults(afe_interv)
         afe_cost = float(afe_defaults["cost_usd"]) if afe_defaults else float(mc_cost)
         afe_econ_obj = evaluate_intervention(
@@ -838,14 +947,37 @@ def _render_evals() -> None:
 theme.setup_page("Production Engineer Copilot", icon="⛽")
 theme.suite_nav("pe-copilot")
 
-_paths = _well_files(str(DATA_DIR))
-if not _paths:
-    st.error("No well files found in data/synthetic/")
-    st.stop()
+# Resolve the active data source ONCE per rerun (renders the sidebar radio), so both
+# the overview and the per-well page list reflect the same source. Switching the radio
+# triggers a Streamlit rerun, which rebuilds the Wells section for the chosen source.
+_source, _ndic_wells, _detail = _resolve_source()
 
-overview = st.Page(render_overview, title="Fleet overview", icon="📊", default=True)
-wells = [
-    st.Page(partial(render_well, p), title=Path(p).stem, url_path=Path(p).stem)
-    for p in _paths
-]
+overview = st.Page(
+    partial(render_overview, _source, _ndic_wells, _detail),
+    title="Fleet overview", icon="📊", default=True)
+
+if _source == "real" and _ndic_wells:
+    # Real NDIC fleet: one page per in-memory WellFile (no JSON path, no cross-links).
+    wells = [
+        st.Page(
+            partial(render_well, w, source=_source, detail=_detail,
+                    raw_path=None, key_ns=f"ndic_{i}", cross_link_stem=None),
+            title=w.well_id, url_path=f"ndic_{i}")
+        for i, w in enumerate(_ndic_wells)
+    ]
+else:
+    # Synthetic fleet: per-well JSON pages (behavior unchanged from before).
+    _paths = _well_files(str(DATA_DIR))
+    if not _paths:
+        st.error("No well files found in data/synthetic/")
+        st.stop()
+    wells = [
+        st.Page(
+            partial(render_well, _load_well_cached(p), source="synthetic",
+                    detail=_SYNTHETIC_DETAIL, raw_path=p, key_ns=Path(p).stem,
+                    cross_link_stem=Path(p).stem),
+            title=Path(p).stem, url_path=Path(p).stem)
+        for p in _paths
+    ]
+
 st.navigation({"Fleet": [overview], "Wells": wells}).run()

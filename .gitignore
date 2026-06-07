@@ -18,3 +18,6 @@ evals/results/
 !evals/results/model_frontier.json
 !evals/results/adversarial.txt
 .DS_Store
+
+# user-supplied real NDIC extract (not committed; template + README are)
+data/real/ndic/production.csv
