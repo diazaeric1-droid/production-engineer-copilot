@@ -44,6 +44,16 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 import fleet_registry
+# --- warm-container module self-heal (vendored top-level modules) -----------
+# Streamlit Cloud reuses the container across redeploys; a cached OLD `theme` /
+# `fleet_registry` in sys.modules (or a stale .pyc) lacks symbols added in a newer
+# commit -> AttributeError (e.g. theme.how_to). Drop their bytecode + evict the cached
+# modules so the imports below reload from the CURRENT commit's source.
+import shutil as _sh_heal
+_sh_heal.rmtree(Path(__file__).resolve().parent / "__pycache__", ignore_errors=True)
+for _stale in ("theme", "fleet_registry"):
+    sys.modules.pop(_stale, None)
+
 import theme
 from src import __version__ as APP_VERSION
 from src.agent import run_review
