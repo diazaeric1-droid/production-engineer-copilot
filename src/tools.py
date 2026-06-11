@@ -330,6 +330,7 @@ class ToolExecutor:
     def __init__(self, well: WellFile):
         self.well = well
         self._last_fit = None
+        self._last_fit_last_day = 0.0  # last observed production day of the fitted history
 
     def dispatch(self, name: str, args: dict[str, Any]) -> str:
         try:
@@ -344,6 +345,7 @@ class ToolExecutor:
         rates = np.array([row["oil_bopd"] for row in history])
         fit = fit_decline(days, rates, model=model)
         self._last_fit = fit
+        self._last_fit_last_day = float(days[-1]) if len(days) else 0.0
         out = {
             "model": fit.model,
             "qi_bopd": fit.qi,
@@ -518,5 +520,11 @@ class ToolExecutor:
     def _tool_project_recovery(self, economic_limit_bopd: float = 5.0) -> dict:
         if self._last_fit is None:
             return {"error": "Call fit_decline_curve first."}
-        eur = project_eur(self._last_fit, economic_limit_bopd=economic_limit_bopd)
+        # Remaining EUR: integrate the fitted decline FORWARD from the last observed
+        # production day, not from t=1 (which double-counts already-produced volume).
+        eur = project_eur(
+            self._last_fit,
+            economic_limit_bopd=economic_limit_bopd,
+            from_day=self._last_fit_last_day,
+        )
         return {"remaining_eur_bbl": eur, "economic_limit_bopd": economic_limit_bopd}

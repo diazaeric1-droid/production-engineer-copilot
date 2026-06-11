@@ -3,6 +3,7 @@ import glob
 import json
 
 import numpy as np
+import pytest
 
 from src.analyzers.decline_curve import fit_decline, project_eur, analyze_water_gas_trends
 from src.analyzers.economics import (
@@ -19,6 +20,42 @@ def test_fit_decline_recovers_known_curve():
     fit = fit_decline(days, rates, model="hyperbolic")
     assert fit.r_squared > 0.99
     assert abs(fit.qi - qi_true) / qi_true < 0.05
+
+
+def test_remaining_eur_integrates_forward_from_last_day_not_t1():
+    """Regression: remaining EUR must integrate the fitted decline FORWARD from the LAST
+    observed production day, not from t=1 (the start of history).
+
+    Integrating from t=1 re-counts every barrel already produced over the history window —
+    a ~2.2x overstatement here. The fix passes ``from_day=days[-1]`` so only the volume
+    still to come (last day -> economic limit) is counted.
+    """
+    qi_true, di_day, elim = 1000.0, 0.0015, 5.0  # exponential, 1/day decline, econ limit
+    # ~18 months of monthly history; the from-t=1 value is ~2.2x the true forward EUR.
+    days = np.arange(0, 18 * 30, 30, dtype=float)
+    rates = qi_true * np.exp(-di_day * days)
+    fit = fit_decline(days, rates, model="exponential")
+    last_day = float(days[-1])
+
+    # Analytic targets, both as the same daily sum project_eur uses internally.
+    t_all = np.arange(1, 365 * 30)
+    q_all = qi_true * np.exp(-di_day * t_all)
+    from_t1_analytic = float(q_all[q_all >= elim].sum())          # the BUG's value
+    t_fwd = np.arange(int(round(last_day)), 365 * 30)
+    q_fwd = qi_true * np.exp(-di_day * t_fwd)
+    forward_analytic = float(q_fwd[q_fwd >= elim].sum())          # the CORRECT value
+
+    remaining = project_eur(fit, economic_limit_bopd=elim, from_day=last_day)
+
+    # Matches the forward integral (fit recovers qi/di near-exactly -> tight tolerance).
+    assert remaining == pytest.approx(forward_analytic, rel=1e-3)
+    # And is decisively NOT the inflated from-t=1 value (~2.2x larger).
+    assert from_t1_analytic / forward_analytic > 2.0
+    assert remaining < 0.6 * from_t1_analytic
+
+    # Sanity: the legacy default (from_day=0) still reproduces the old from-t=1 total,
+    # so the parameter is the only behaviour switch.
+    assert project_eur(fit, economic_limit_bopd=elim) == pytest.approx(from_t1_analytic, rel=1e-3)
 
 
 def test_esp_flags_below_por():

@@ -76,7 +76,9 @@ def _indicated_intervention(well: WellFile) -> tuple[str, str]:
             return "gas_separator", "Low intake pressure — gas interference"
         if not d.in_por and d.current_bfpd < d.por_min_bfpd:
             try:
-                eur = project_eur(fit_decline(days, oil))
+                # Remaining EUR: integrate the decline FORWARD from the last observed
+                # production day (not t=1), else already-produced volume is double-counted.
+                eur = project_eur(fit_decline(days, oil), from_day=float(days[-1]))
             except Exception:
                 eur = 0.0
             verdict = evaluate_esp_economic_life(
@@ -118,7 +120,9 @@ def screen_wellfile(well: WellFile) -> PortfolioRow:
     oil = np.array([r.get("oil_bopd", 0) for r in well.production_history], float)
     last_oil = float(oil[oil > 0][-1]) if (oil > 0).any() else 0.0
     try:
-        eur = project_eur(fit_decline(np.array([r["day"] for r in well.production_history], float), oil))
+        _days = np.array([r["day"] for r in well.production_history], float)
+        # Remaining EUR integrated FORWARD from the last observed day (not t=1).
+        eur = project_eur(fit_decline(_days, oil), from_day=float(_days[-1]))
     except Exception:
         eur = 0.0
     wg = analyze_water_gas_trends(well.production_history) if well.production_history else None

@@ -204,9 +204,26 @@ def analyze_type_curve(
     )
 
 
-def project_eur(fit: DeclineFit, economic_limit_bopd: float = 5.0, horizon_days: int = 365 * 30) -> float:
-    """Estimated ultimate recovery to economic limit (bbl)."""
-    t = np.arange(1, horizon_days)
+def project_eur(
+    fit: DeclineFit,
+    economic_limit_bopd: float = 5.0,
+    horizon_days: int = 365 * 30,
+    from_day: float = 0.0,
+) -> float:
+    """Remaining recovery to economic limit (bbl), integrated FORWARD from ``from_day``.
+
+    The Arps fit is parameterised in days-since-first-production, so ``fit.qi`` is the rate
+    at t=0 (the START of production history). Integrating from t=1 therefore re-counts every
+    barrel already produced during the history window — a ~2-3x overstatement of *remaining*
+    reserves. To get remaining EUR, pass ``from_day`` = the LAST observed production day
+    (``days[-1]``); the curve is then integrated from there to the economic limit.
+
+    ``from_day=0`` (the default) keeps the legacy "total EUR from first production" behaviour
+    for any caller that genuinely wants cumulative-from-start, but every *remaining*-reserves
+    caller in this app passes the last history day.
+    """
+    start = max(int(round(from_day)), 1)
+    t = np.arange(start, horizon_days)
     if fit.model == "exponential":
         q = _exponential(t, fit.qi, fit.di)
     elif fit.model == "harmonic":
