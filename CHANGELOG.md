@@ -4,6 +4,40 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] — 2026-06-11
+
+### Fixed
+- **Discount convention bug (both NPV paths).** `economics.py` discounted with
+  `(1 + r/12)**months`, compounding a 10% input to a 10.47% effective-annual rate — out of
+  step with the AFE and Capital apps, which use the correct `(1 + r)**(months/12)`. The bug
+  was in BOTH the deterministic `evaluate_intervention` and the Monte-Carlo
+  `_npv_payout_vectorized`. Both now route through the shared, tested **`econ_core`** kernel
+  (vendored byte-identical at `src/analyzers/econ_core.py`): effective-annual `discounted_pv`,
+  `exp_uplift_rate`, and `risked_npv` (`pc*PV - cost`). NPV magnitudes rise slightly (less
+  discounting); all dataclass fields and return shapes are unchanged, and the deterministic and
+  MC paths stay consistent. Adds `test_econ_core` (11 tests) locking the conventions.
+- **Remaining-EUR overstatement (~2.2x).** `project_eur` integrated the fitted decline from
+  t=1 (the START of production history), re-counting every barrel already produced and
+  overstating *remaining* reserves ~2.2x (e.g. 662,835 → 307,123 bbl on an 18-month synthetic
+  well). It now integrates FORWARD from the last observed production day (`from_day`); the
+  portfolio screen and `project_recovery` tool pass `days[-1]`. Regression test added.
+
+### Changed
+- **Honest blind-holdout grade (Phase 2).** The holdout previously reported a phantom **1.00**
+  because the recommendation grader was lenient: it credited a class if any synonym appeared
+  *anywhere* in the report, and its synonym sets overlapped across near-miss classes (so an
+  acid-stim report scored a hit on a scale expectation, and vice-versa). The holdout is now
+  graded **strictly** — the report's actual #1 recommendation must be the **exact** intervention
+  class, no near-miss credit (`recommendation_matches_strict` in `run_evals.py`). The honest
+  number is **0.72 (13/18)**; the five misses are genuine near-miss confusions
+  (acid-stim↔scale, esp-swap↔gas-separator, monitor↔gas-lift-optimization,
+  insufficient-data↔monitor). `summary_holdout.json` re-graded; the CI gate now guards the
+  strict holdout at a **0.70** floor (was 0.85 on the lenient dev summary); README badge/table
+  updated. The de-leak invariant was re-verified — holdout `notes` carry observations only.
+  *Note: the strict number was computed by re-grading the committed real-agent predictions; a
+  full live re-run of the LLM holdout needs `ANTHROPIC_API_KEY`, which this change set did not
+  have (see PR notes).*
+
 ## [0.9.0] — 2026-06-07
 ### Added
 - **Real public data is now the DEFAULT** — Colorado ECMC (COGCC) **DJ Basin Niobrara/Codell** per-well monthly production (28-well committed slice, harvested by `data/real/colorado/fetch_colorado.py`); new `src/adapters/colorado.py`. Sidebar defaults to **Real — Colorado**; NDIC retained as a bring-your-own-export path (NDIC bulk data is a paid subscription).
