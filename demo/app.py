@@ -363,6 +363,12 @@ def render_overview(source: str, ndic_wells: list[WellFile] | None, detail: str)
             "Lateral (ft)": st.column_config.NumberColumn("Lateral (ft)", format="%d"),
         },
     )
+    st.download_button(
+        "⬇ Download CSV",
+        data=display.to_csv(index=False),
+        file_name="fleet_table.csv",
+        mime="text/csv",
+    )
 
     # --- top-opportunity bar (deterministic) -------------------------------
     if not actionable.empty:
