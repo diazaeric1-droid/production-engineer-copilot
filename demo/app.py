@@ -89,6 +89,18 @@ _REAL_DETAIL = ("North Dakota (NDIC) public monthly filings — Bakken (Willisto
                 "Monthly cadence; no ESP telemetry.")
 _SYNTHETIC_DETAIL = ("Modeled wells with known ground truth (clean signatures + ESP "
                      "readings for the diagnostics).")
+_UPLOAD_DETAIL = ("User-uploaded monthly production CSV. "
+                  "Monthly cadence; no ESP telemetry.")
+
+# Required columns for the BYOD CSV upload (subset that load_ndic_fleet needs).
+# Optional columns (well_name, operator, field, formation) default gracefully if absent.
+_UPLOAD_REQUIRED_COLS = ("well_id", "date", "oil_bbl", "gas_mcf", "water_bbl", "days")
+_UPLOAD_SCHEMA_CAPTION = (
+    "Expected columns: `well_id`, `date` (YYYY-MM), `oil_bbl`, `gas_mcf`, "
+    "`water_bbl`, `days` (days produced). Optional: `well_name`, `operator`, "
+    "`field`, `formation`. Nothing is uploaded or stored server-side — the file "
+    "is processed in-memory for this browser session only."
+)
 
 
 # ---------- cached heavy loads (string args so they hash/cache cleanly) ------
@@ -122,6 +134,52 @@ def _colorado_wells(csv_path: str) -> list[WellFile]:
     return load_colorado_fleet(csv_path)
 
 
+def _load_upload(uploaded_file) -> list[WellFile]:
+    """Parse an in-memory uploaded CSV into WellFiles via the shared NDIC loader.
+
+    Writes to a NamedTemporaryFile (required by load_ndic_fleet which needs a path),
+    then deletes it. Raises ValueError with a descriptive message on bad input so
+    the caller can show st.error without crashing.
+    """
+    import os
+    import tempfile
+
+    content = uploaded_file.getvalue()
+    # Validate required columns before writing to disk (cheap header check).
+    try:
+        header_line = content.decode("utf-8", errors="replace").split("\n")[0]
+        # Strip BOM + whitespace, normalise to lower-case for comparison
+        cols_found = {c.strip().lstrip("﻿").lower() for c in header_line.split(",")}
+        missing = [c for c in _UPLOAD_REQUIRED_COLS if c not in cols_found]
+        if missing:
+            raise ValueError(
+                f"Missing required column(s): {', '.join(missing)}. "
+                f"Required: {', '.join(_UPLOAD_REQUIRED_COLS)}"
+            )
+    except UnicodeDecodeError:
+        raise ValueError("File does not appear to be a UTF-8 CSV.")
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+        wells = load_ndic_fleet(
+            tmp_path,
+            source_note="User-uploaded monthly production CSV.",
+            field_default="User upload",
+            operator_default="User upload",
+            formation_default="Unknown",
+        )
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+    return wells
+
+
 def _resolve_source() -> tuple[str, list[WellFile] | None, str]:
     """Resolve the ACTIVE data source from the sidebar toggle.
 
@@ -133,12 +191,13 @@ def _resolve_source() -> tuple[str, list[WellFile] | None, str]:
     choice = st.sidebar.radio(
         "Data source",
         ("Real — Colorado DJ Basin (ECMC)", "Synthetic (demo)",
-         "Real — North Dakota (NDIC, your export)"),
+         "Real — North Dakota (NDIC, your export)", "Upload your own CSV"),
         index=0,
         help="Real — Colorado = FREE ECMC public monthly records (DJ Basin Niobrara/Codell "
              "horizontals); the suite default. Synthetic = modeled wells with known ground "
              "truth + full ESP diagnostics. Real — North Dakota = drop your own NDIC monthly "
              "export at data/real/ndic/production.csv (NDIC bulk data is a paid subscription). "
+             "Upload your own CSV = bring any monthly production CSV in the tidy schema. "
              "Real monthly data has no ESP telemetry, so the ESP panel is skipped on those wells.",
     )
     if choice.startswith("Real — Colorado"):
@@ -164,6 +223,34 @@ def _resolve_source() -> tuple[str, list[WellFile] | None, str]:
         else:
             st.info("No NDIC extract in data/real/ndic/ — NDIC bulk data is a paid "
                     "subscription (see README). The default **Colorado** source is free real data.")
+    elif choice == "Upload your own CSV":
+        st.sidebar.caption(_UPLOAD_SCHEMA_CAPTION)
+        uploaded = st.sidebar.file_uploader(
+            "Monthly production CSV", type=["csv"], key="byod_upload",
+            help="Tidy monthly CSV: well_id, date (YYYY-MM), oil_bbl, gas_mcf, water_bbl, days. "
+                 "Processed in-memory — nothing is stored server-side.",
+        )
+        if uploaded is None:
+            st.info(
+                "Upload a monthly production CSV to analyze your own fleet. "
+                f"{_UPLOAD_SCHEMA_CAPTION}"
+            )
+            st.stop()
+        try:
+            wells = _load_upload(uploaded)
+            if wells:
+                st.sidebar.success(f"Loaded {len(wells)} well(s) from upload.")
+                return "real", wells, _UPLOAD_DETAIL
+            st.sidebar.error("No usable wells found in the uploaded CSV.")
+        except ValueError as e:
+            st.error(
+                f"**Could not parse the uploaded CSV.**\n\n{e}\n\n"
+                f"Required columns: `{', '.join(_UPLOAD_REQUIRED_COLS)}`"
+            )
+            st.stop()
+        except Exception as e:
+            st.error(f"Unexpected error reading CSV: {e}")
+            st.stop()
     return "synthetic", None, _SYNTHETIC_DETAIL
 
 
