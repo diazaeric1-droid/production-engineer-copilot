@@ -18,7 +18,7 @@ Built by a Staff Production Engineer (ex-OXY, ex-Shell) who spent 9 years doing 
 [![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://pe-copilot.streamlit.app)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org/)
-[![Eval](https://img.shields.io/badge/eval-1.00%20blind%20holdout-blue)](evals/sample_review.md)
+[![Eval](https://img.shields.io/badge/eval-0.72%20strict%20blind%20holdout-blue)](evals/sample_review.md)
 
 **Try it now → [pe-copilot.streamlit.app](https://pe-copilot.streamlit.app)**
 
@@ -110,19 +110,25 @@ Scoring goes beyond keyword-match: per-class agreement, an expected→predicted 
 matrix, and an optional 1-5 LLM-as-judge rubric (diagnosis / recommendation / economics /
 restraint), so systematic confusions surface instead of hiding in one blended number.
 
-**Current (v0.4):**
+**Current:**
 
 | Set | Recommendation agreement | Diagnosis keyword hit rate |
 |---|---|---|
-| Dev (41 cases) | **41 / 41 (1.00)** | 0.87 |
-| **Blind holdout (18 cases)** | **18 / 18 (1.00)** | 0.92 |
+| Dev (41 cases, lenient synonym grade) | 41 / 41 (1.00) | 0.87 |
+| **Blind holdout (18 cases, strict exact-class grade)** | **13 / 18 (0.72)** | 0.92 |
 
-Up from the prior **0.90 on 20 hand-tuned wells whose notes contained the answer** — a higher
-rate on ~3× the sample, on a set where the diagnosis is no longer in the data. Per-class
-agreement is 100% across all twelve recommendation classes on both sets. *Caveat for honesty:*
-these are synthetic wells with clean, separable signatures (each archetype's discriminating
-signal is verified reachable from the deterministic tools). Real wells have overlapping, noisier
-signatures — the next credibility step is real operator data and the blind inter-rater PE panel
+The blind holdout is graded **strictly**: the report's actual #1 recommendation must be the
+**exact** intervention class, with no credit for near-miss classes that share treatment
+vocabulary. An earlier build reported a phantom **1.00** here — the recommendation grader was
+lenient (it credited a class if any synonym appeared *anywhere* in the report, and its synonym
+sets overlapped across neighbouring classes, so an acid-stim report scored a hit on a scale
+expectation and vice-versa). Tightening to an exact-class grade drops the honest number to
+**0.72 (13/18)**: the five misses are real near-miss confusions (acid-stim↔scale,
+esp-swap↔gas-separator, monitor↔gas-lift-optimization, insufficient-data↔monitor) the lenient
+grader was hiding. The CI gate floors at **0.70** against this strict number, and the dev set
+is still the lenient signal the prompt was tuned against. *Caveat for honesty:* these are
+synthetic wells with clean, separable signatures; real wells have overlapping, noisier ones —
+the next credibility step is real operator data and the blind inter-rater PE panel
 (`make_human_grading_sheet.py`), not a higher synthetic number.
 
 ## Beyond the synthetic score (v0.5)

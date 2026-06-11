@@ -26,5 +26,5 @@ jobs:
       - name: Run unit tests
         run: python -m pytest -q
 
-      - name: Eval regression gate (agreement >= 0.85)
-        run: python evals/check_gate.py --threshold 0.85
+      - name: Eval regression gate (strict blind-holdout agreement >= 0.70)
+        run: python evals/check_gate.py --threshold 0.70

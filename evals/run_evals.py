@@ -71,9 +71,42 @@ def keyword_hit_rate(report: str, keywords: list[str]) -> float:
 
 
 def recommendation_matches(report: str, expected: str) -> bool:
-    """Match expected recommendation (with underscores) against report using synonyms."""
+    """LENIENT match: expected recommendation (or any synonym) appears ANYWHERE in the report.
+
+    Kept for the dev set and the confusion-matrix extraction, but NOT used to grade the blind
+    holdout — it is too generous in two ways that together inflated the holdout to a phantom
+    1.00: (1) substring-anywhere credits a class even when the report *discusses and rejects*
+    it lower down, and (2) the synonym sets deliberately OVERLAP across near-miss classes
+    (e.g. ``scale_treatment`` lists "acid stim", ``esp_swap`` shares vocabulary with
+    ``gas_separator``), so an acid-stim report scores a hit on the scale expectation and vice
+    versa. Use :func:`recommendation_matches_strict` for an honest, exact-class grade.
+    """
     return _matches_with_synonyms(report, expected.replace("_", " "), RECOMMENDATION_SYNONYMS) or \
            _matches_with_synonyms(report, expected, RECOMMENDATION_SYNONYMS)
+
+
+def _canonical_class(label: str) -> str:
+    """Normalise a recommendation class for EXACT comparison.
+
+    Collapses the underscore/hyphen/space spelling differences (``esp-to-beam_conversion`` vs
+    ``esp to beam conversion``) so the comparison is on the class identity only. Near-miss
+    classes that share treatment vocabulary (acid stim vs scale; esp swap vs gas separator)
+    stay DISTINCT — that distinction is exactly what the honest grade must preserve.
+    """
+    return label.strip().lower().replace("_", " ").replace("-", " ").replace("  ", " ")
+
+
+def recommendation_matches_strict(report: str, expected: str) -> bool:
+    """STRICT, honest grade: the report's actual #1 recommendation must be EXACTLY the
+    expected intervention class.
+
+    No substring-anywhere credit and no near-miss synonym leakage: we extract the report's
+    primary recommendation with :func:`predicted_label` (which reads the #1 row of the
+    recommendations section) and require an exact canonical-class match. A report that lands
+    on a neighbouring class — even one sharing chemistry/vocabulary — is scored WRONG, which
+    is the point of a blind holdout.
+    """
+    return _canonical_class(predicted_label(report)) == _canonical_class(expected)
 
 
 def predicted_label(report: str) -> str:
@@ -113,7 +146,17 @@ def main():
     parser.add_argument("--judge", action="store_true",
                         help="Also score each report 1-5 on 4 rubric axes with an LLM judge "
                              "(requires ANTHROPIC_API_KEY; adds cost).")
+    parser.add_argument("--lenient", action="store_true",
+                        help="Grade with the legacy substring/synonym matcher instead of the "
+                             "strict exact-class grade. The blind holdout grades STRICT by "
+                             "default (exact intervention-class match, no near-miss credit); "
+                             "this flag is for debugging / comparing against the old number.")
     args = parser.parse_args()
+
+    # The blind holdout is graded STRICTLY by default (exact #1-recommendation class match,
+    # no synonym-overlap / substring-anywhere credit). The dev set keeps the lenient grade it
+    # was tuned against unless --lenient/--strict is overridden. --lenient forces lenient.
+    strict_grade = args.holdout and not args.lenient
 
     console = Console()
     RESULTS_DIR.mkdir(exist_ok=True)
@@ -169,8 +212,11 @@ def main():
         kw_rate = keyword_hit_rate(report, case.get("expected_diagnosis_keywords", []))
         expected_raw = case["expected_primary_recommendation"]
         expected = expected_raw.replace("_", " ").lower()
-        rec_match = recommendation_matches(report, expected_raw)
         predicted = predicted_label(report)
+        lenient_match = recommendation_matches(report, expected_raw)
+        strict_match = recommendation_matches_strict(report, expected_raw)
+        # The headline `recommendation_match` is STRICT on the holdout, lenient on the dev set.
+        rec_match = strict_match if strict_grade else lenient_match
         confusion[(expected_raw, predicted)] = confusion.get((expected_raw, predicted), 0) + 1
 
         row_data = {
@@ -181,7 +227,11 @@ def main():
             "expected": expected,
             "predicted": predicted,
             "keyword_hit_rate": kw_rate,
+            # Headline grade (strict on holdout); both raw signals kept for auditability.
             "recommendation_match": rec_match,
+            "strict_match": strict_match,
+            "lenient_match": lenient_match,
+            "grade_mode": "strict" if strict_grade else "lenient",
         }
 
         judge_cell = ""
@@ -204,8 +254,10 @@ def main():
 
     n = len(cases)
     console.print(table)
+    grade_label = "STRICT exact-class" if strict_grade else "lenient synonym"
     console.print(
-        f"\n[bold]Overall ({'HOLDOUT' if args.holdout else 'dev'}):[/] keyword {total_keyword / n:.0%} · "
+        f"\n[bold]Overall ({'HOLDOUT' if args.holdout else 'dev'}, {grade_label}):[/] "
+        f"keyword {total_keyword / n:.0%} · "
         f"recommendation {total_recommend}/{n} ({total_recommend / n:.0%})"
     )
 

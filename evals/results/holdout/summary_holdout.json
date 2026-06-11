@@ -7,7 +7,10 @@
     "expected": "acid stimulation",
     "predicted": "scale_treatment",
     "keyword_hit_rate": 1.0,
-    "recommendation_match": true
+    "recommendation_match": false,
+    "strict_match": false,
+    "lenient_match": true,
+    "grade_mode": "strict"
   },
   {
     "id": "case_002",
@@ -17,7 +20,10 @@
     "expected": "esp swap",
     "predicted": "acid_stimulation",
     "keyword_hit_rate": 1.0,
-    "recommendation_match": true
+    "recommendation_match": false,
+    "strict_match": false,
+    "lenient_match": true,
+    "grade_mode": "strict"
   },
   {
     "id": "case_003",
@@ -27,7 +33,10 @@
     "expected": "esp swap",
     "predicted": "esp_swap",
     "keyword_hit_rate": 1.0,
-    "recommendation_match": true
+    "recommendation_match": true,
+    "strict_match": true,
+    "lenient_match": true,
+    "grade_mode": "strict"
   },
   {
     "id": "case_004",
@@ -37,7 +46,10 @@
     "expected": "gas separator",
     "predicted": "gas_separator",
     "keyword_hit_rate": 1.0,
-    "recommendation_match": true
+    "recommendation_match": true,
+    "strict_match": true,
+    "lenient_match": true,
+    "grade_mode": "strict"
   },
   {
     "id": "case_005",
@@ -47,7 +59,10 @@
     "expected": "gas separator",
     "predicted": "esp_swap",
     "keyword_hit_rate": 1.0,
-    "recommendation_match": true
+    "recommendation_match": false,
+    "strict_match": false,
+    "lenient_match": true,
+    "grade_mode": "strict"
   },
   {
     "id": "case_006",
@@ -57,7 +72,10 @@
     "expected": "scale treatment",
     "predicted": "scale_treatment",
     "keyword_hit_rate": 1.0,
-    "recommendation_match": true
+    "recommendation_match": true,
+    "strict_match": true,
+    "lenient_match": true,
+    "grade_mode": "strict"
   },
   {
     "id": "case_007",
@@ -67,7 +85,10 @@
     "expected": "monitor",
     "predicted": "monitor",
     "keyword_hit_rate": 1.0,
-    "recommendation_match": true
+    "recommendation_match": true,
+    "strict_match": true,
+    "lenient_match": true,
+    "grade_mode": "strict"
   },
   {
     "id": "case_008",
@@ -77,7 +98,10 @@
     "expected": "esp-to-beam conversion",
     "predicted": "esp-to-beam_conversion",
     "keyword_hit_rate": 1.0,
-    "recommendation_match": true
+    "recommendation_match": true,
+    "strict_match": true,
+    "lenient_match": true,
+    "grade_mode": "strict"
   },
   {
     "id": "case_009",
@@ -87,7 +111,10 @@
     "expected": "pump-off controller",
     "predicted": "pump-off_controller",
     "keyword_hit_rate": 1.0,
-    "recommendation_match": true
+    "recommendation_match": true,
+    "strict_match": true,
+    "lenient_match": true,
+    "grade_mode": "strict"
   },
   {
     "id": "case_010",
@@ -97,7 +124,10 @@
     "expected": "monitor",
     "predicted": "monitor",
     "keyword_hit_rate": 0.5,
-    "recommendation_match": true
+    "recommendation_match": true,
+    "strict_match": true,
+    "lenient_match": true,
+    "grade_mode": "strict"
   },
   {
     "id": "case_011",
@@ -107,7 +137,10 @@
     "expected": "workover",
     "predicted": "workover",
     "keyword_hit_rate": 1.0,
-    "recommendation_match": true
+    "recommendation_match": true,
+    "strict_match": true,
+    "lenient_match": true,
+    "grade_mode": "strict"
   },
   {
     "id": "case_012",
@@ -117,7 +150,10 @@
     "expected": "gas lift optimization",
     "predicted": "gas_lift_optimization",
     "keyword_hit_rate": 1.0,
-    "recommendation_match": true
+    "recommendation_match": true,
+    "strict_match": true,
+    "lenient_match": true,
+    "grade_mode": "strict"
   },
   {
     "id": "case_013",
@@ -127,7 +163,10 @@
     "expected": "monitor",
     "predicted": "gas_lift_optimization",
     "keyword_hit_rate": 0.5,
-    "recommendation_match": true
+    "recommendation_match": false,
+    "strict_match": false,
+    "lenient_match": true,
+    "grade_mode": "strict"
   },
   {
     "id": "case_014",
@@ -137,7 +176,10 @@
     "expected": "paraffin treatment",
     "predicted": "paraffin_treatment",
     "keyword_hit_rate": 1.0,
-    "recommendation_match": true
+    "recommendation_match": true,
+    "strict_match": true,
+    "lenient_match": true,
+    "grade_mode": "strict"
   },
   {
     "id": "case_015",
@@ -147,7 +189,10 @@
     "expected": "p&a",
     "predicted": "p&a",
     "keyword_hit_rate": 0.5,
-    "recommendation_match": true
+    "recommendation_match": true,
+    "strict_match": true,
+    "lenient_match": true,
+    "grade_mode": "strict"
   },
   {
     "id": "case_016",
@@ -157,7 +202,10 @@
     "expected": "scale treatment",
     "predicted": "scale_treatment",
     "keyword_hit_rate": 1.0,
-    "recommendation_match": true
+    "recommendation_match": true,
+    "strict_match": true,
+    "lenient_match": true,
+    "grade_mode": "strict"
   },
   {
     "id": "case_017",
@@ -167,7 +215,10 @@
     "expected": "scale treatment",
     "predicted": "scale_treatment",
     "keyword_hit_rate": 1.0,
-    "recommendation_match": true
+    "recommendation_match": true,
+    "strict_match": true,
+    "lenient_match": true,
+    "grade_mode": "strict"
   },
   {
     "id": "case_018",
@@ -177,6 +228,9 @@
     "expected": "insufficient data",
     "predicted": "monitor",
     "keyword_hit_rate": 1.0,
-    "recommendation_match": true
+    "recommendation_match": false,
+    "strict_match": false,
+    "lenient_match": true,
+    "grade_mode": "strict"
   }
 ]
