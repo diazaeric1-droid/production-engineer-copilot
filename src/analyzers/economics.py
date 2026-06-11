@@ -5,11 +5,15 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from . import econ_core
 from .assumptions import (
     REALIZED_PRICE_USD_PER_BBL, LOE_USD_PER_BBL, DISCOUNT_RATE,
     ESP_RUN_LIFE_YEARS, BEAM_RUN_LIFE_YEARS,
     ESP_WORKOVER_COST_USD, BEAM_CONVERSION_COST_USD,
 )
+
+# Days/month convention matches econ_core (avoids the 360-day-year undercount).
+DAYS_PER_MONTH = econ_core.DAYS_PER_MONTH
 
 
 @dataclass
@@ -49,10 +53,9 @@ def evaluate_intervention(
       - water_disposal_per_bbl + water_cut_pct : SWD/LOE drag. Each incremental oil bbl
                                drags water at the current cut; disposing it eats net margin.
     """
-    days_per_month = 365.25 / 12  # avoid the 360-day-year undercount
     months = np.arange(1, horizon_years * 12 + 1)
-    monthly_rate = incremental_rate_bopd * np.exp(-uplift_decline_per_yr * (months / 12))
-    monthly_vol = monthly_rate * days_per_month  # bbl/month
+    monthly_rate = econ_core.exp_uplift_rate(incremental_rate_bopd, uplift_decline_per_yr, months)
+    monthly_vol = monthly_rate * DAYS_PER_MONTH  # bbl/month
 
     # Net margin per incremental oil bbl, after lifting cost AND the water it drags.
     # water/oil ratio = wc/(1-wc); each incremental oil bbl carries that much water to dispose.
@@ -66,9 +69,12 @@ def evaluate_intervention(
     deferred_cost = (deferred_days * base_rate_bopd) * max(net_margin, 0.0)
     total_cost = treatment_cost_usd + deferred_cost
 
-    discount_factors = (1 + discount_rate / 12) ** months
-    pv_inflows = float(np.sum(monthly_revenue / discount_factors)) * p
-    npv = pv_inflows - total_cost
+    # Effective-annual discounting via the shared kernel (a 10% input == 10%/yr, NOT the
+    # 10.47% the old (1 + r/12)**m monthly-compounding implied). risked_npv applies the
+    # chance-of-success to the revenue PV only — the capital is spent regardless.
+    pv_unrisked = econ_core.discounted_pv(monthly_revenue, discount_rate)
+    pv_inflows = pv_unrisked * p
+    npv = econ_core.risked_npv(pv_unrisked, total_cost, p)
 
     # Payout uses the risk-weighted expected revenue stream.
     cumulative = np.cumsum(monthly_revenue * p)
@@ -190,17 +196,16 @@ def _npv_payout_vectorized(
     so the deterministic and stochastic paths can never diverge.
     """
     n = incremental_rate_bopd.shape[0]
-    days_per_month = 365.25 / 12
     months = np.arange(1, horizon_years * 12 + 1)                  # (M,)
     # (n, M) monthly rate: exp(-decline * year_fraction), decline varies per trial.
-    rate = incremental_rate_bopd[:, None] * np.exp(
-        -uplift_decline_per_yr[:, None] * (months[None, :] / 12)
-    )
-    monthly_vol = rate * days_per_month                            # bbl/month, (n, M)
+    # econ_core.exp_uplift_rate broadcasts the per-trial qi/decline arrays into (n, M).
+    rate = econ_core.exp_uplift_rate(incremental_rate_bopd, uplift_decline_per_yr, months)
+    monthly_vol = rate * econ_core.DAYS_PER_MONTH                  # bbl/month, (n, M)
     margin = (realized_price_per_bbl - opex_per_bbl)[:, None]      # (n, 1)
     monthly_revenue = monthly_vol * margin                         # (n, M)
-    discount_factors = (1 + discount_rate / 12) ** months          # (M,)
-    npv = np.sum(monthly_revenue / discount_factors[None, :], axis=1) - treatment_cost_usd
+    # Same effective-annual discounting as evaluate_intervention (discounted_pv handles the
+    # (n, M) batch over the last axis) so the deterministic and MC paths can never diverge.
+    npv = econ_core.discounted_pv(monthly_revenue, discount_rate) - treatment_cost_usd
 
     # Payout: first month where cumulative net (undiscounted) revenue >= cost.
     cumulative = np.cumsum(monthly_revenue, axis=1)                # (n, M)
