@@ -363,12 +363,8 @@ def render_overview(source: str, ndic_wells: list[WellFile] | None, detail: str)
             "Lateral (ft)": st.column_config.NumberColumn("Lateral (ft)", format="%d"),
         },
     )
-    st.download_button(
-        "⬇ Download CSV",
-        data=display.to_csv(index=False),
-        file_name="fleet_table.csv",
-        mime="text/csv",
-    )
+    st.download_button("⬇ Download fleet table (CSV)", data=display.to_csv(index=False),
+                       file_name="pe_copilot_fleet.csv", mime="text/csv")
 
     # --- top-opportunity bar (deterministic) -------------------------------
     if not actionable.empty:
@@ -906,6 +902,22 @@ def _render_economics(well, key_ns: str | None = None) -> None:
     m3.metric("P10 NPV (optimistic)", f"${sim['npv_p10_usd']/1e6:,.2f}MM")
     m4.metric("P(payout)", f"{sim['probability_of_payout']*100:.0f}%",
               help=f"Fraction of trials with NPV>0 AND payout < {sim['payout_cutoff_months']:.0f} months")
+
+    econ_csv_df = pd.DataFrame([{
+        "intervention": mc_name,
+        "treatment_cost_usd": mc_cost,
+        "incremental_rate_bopd": mc_rate,
+        "uplift_decline_per_yr": mc_decline,
+        "realized_price_per_bbl": mc_price,
+        "n_trials": mc_trials,
+        "npv_p90_usd": sim["npv_p90_usd"],
+        "npv_p50_usd": sim["npv_p50_usd"],
+        "npv_p10_usd": sim["npv_p10_usd"],
+        "npv_mean_usd": sim["npv_mean_usd"],
+        "probability_of_payout": sim["probability_of_payout"],
+    }])
+    st.download_button("⬇ Download economics results (CSV)", data=econ_csv_df.to_csv(index=False),
+                       file_name="pe_copilot_economics.csv", mime="text/csv")
 
     npv_samples = sim["npv_samples"] / 1e6
     fig_dist = go.Figure()
