@@ -1047,7 +1047,7 @@ def _render_economics(well, key_ns: str | None = None) -> None:
                 st.json(preview)
 
         st.markdown(
-            "🔗 [Open in AFE Copilot](https://diazaeric1-afe-copilot.hf.space) "
+            "🔗 [Open in AFE Copilot](https://afe-copilot.streamlit.app) "
             "to draft & track the full authorization (WI/NRI net economics, JIB "
             "allocation, risk register, audit trail).")
 
