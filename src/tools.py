@@ -343,6 +343,38 @@ class ToolExecutor:
         history = self.well.production_history
         days = np.array([row["day"] for row in history])
         rates = np.array([row["oil_bopd"] for row in history])
+        # Deterministic sufficiency verdict, surfaced as structured output rather than a
+        # bare error string: when there is nothing to confirm health with, the agent must
+        # not guess "monitor" — the prompt keys its insufficient-data rule off this block.
+        n_valid = int(np.sum((rates > 0) & np.isfinite(rates))) if len(rates) else 0
+        if n_valid < 5:
+            has_esp = bool(self.well.esp_readings)
+            has_dyno = bool(self.well.dyno_cards)
+            if not has_esp and not has_dyno:
+                verdict = (
+                    "INSUFFICIENT DATA — no fittable decline and no lift diagnostics. "
+                    "The primary recommendation MUST be 'Insufficient data to make a "
+                    "recommendation'. Do not default to 'monitor' and do not invent an "
+                    "intervention."
+                )
+            else:
+                verdict = (
+                    "Decline cannot be fit on this history; diagnose from the available "
+                    "lift data only and state explicitly that decline/EUR conclusions "
+                    "are not supported."
+                )
+            return {
+                "error": f"Cannot fit a decline: only {n_valid} valid production points "
+                         f"(need >= 5).",
+                "data_sufficiency": {
+                    "sufficient": False,
+                    "valid_production_points": n_valid,
+                    "min_required": 5,
+                    "esp_readings_available": has_esp,
+                    "dyno_cards_available": has_dyno,
+                    "verdict": verdict,
+                },
+            }
         fit = fit_decline(days, rates, model=model)
         self._last_fit = fit
         self._last_fit_last_day = float(days[-1]) if len(days) else 0.0

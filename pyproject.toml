@@ -1,6 +1,6 @@
 [project]
 name = "production-engineer-copilot"
-version = "0.9.2"
+version = "0.9.3"
 description = "AI agent that performs complete well reviews for production engineers"
 readme = "README.md"
 requires-python = ">=3.11"

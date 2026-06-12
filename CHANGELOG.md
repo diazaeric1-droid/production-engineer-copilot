@@ -4,6 +4,39 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] — 2026-06-12
+
+### Changed
+- **Phase-A eval fixes (prompt + tool), targeting the five strict-grader confusion pairs**
+  surfaced by re-grading the dev set strictly (35/41): acid-stim↔scale, gas-separator↔esp-swap,
+  gas-lift-normal→optimization, insufficient-data→monitor, below-POR→acid-stim. Root causes and
+  fixes, derived from DEV-set failures only (the blind holdout stays untouched until one live
+  post-fix run):
+  - The scale heuristic told the agent to surface BOTH "scale treatment" and "acid stimulation"
+    — a relic written against the old lenient grader that actively blurred the primary-class
+    choice. Replaced with an **ESP signal-triangle triage** (intake pressure = inflow, amps vs
+    nameplate = pump load, GOR/casing trend = gas): amps at/below nameplate + starved intake +
+    rising GOR → gas separator (high amps *contradict* gas); amps above nameplate + starved
+    intake + underperforming → **acid stimulation** (dedicated rule — previously absent); amps
+    above nameplate + healthy intake + in-POR → **scale treatment** (gas distractor explicitly
+    non-overriding); sequenced combined-job exception retained.
+  - The clean-diagnostics→monitor rule listed no gas-lift health criteria, so "optimization"
+    looked like the lift-type default. Added explicit healthy-gas-lift criteria (stable THP,
+    steady separator rates, flat GOR) and made the loading rule require a positive signal.
+  - The insufficient-data call relied on the LLM noticing a bare error string. `fit_decline_curve`
+    now returns a structured `data_sufficiency` verdict (<5 valid points: counts, lift-data
+    availability, and — when no lift diagnostics exist — the exact required recommendation
+    wording); the prompt keys off the tool verdict instead of judgment.
+- The committed holdout grade remains **0.722 (13/18 strict)** — recorded pre-fix predictions.
+  These fixes are validated against the strict dev re-grade only; the honest number moves only
+  after a single live holdout re-run (pending API key rotation).
+
+### Added
+- `tests/test_phase_a_eval_fixes.py` — 8 deterministic tests locking the data-sufficiency
+  verdict (sparse/no-lift → MUST wording; sparse/with-lift → softer; ≥5 points → unchanged
+  output) and the prompt decision rules (conflation phrase gone, acid-stim rule present,
+  amp-direction gas/scale discriminator, healthy-gas-lift criteria, tool-verdict keying).
+
 ## [0.9.2] — 2026-06-11
 
 ### Added
